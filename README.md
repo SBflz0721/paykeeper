@@ -71,13 +71,16 @@ DEEPSEEK_API_KEY=sk-xxxx
 ## 提交材料
 
 - 源码：本仓库
-- 演示视频：展示 Agent 经 KeeperHub 完成真实链上付款
+- 演示视频：`docs/DEMO_SCRIPT.md` 录制指南 + `demo/paykeeper_demo.html` 终端演示动画（打开即可观看/录屏）
 - 交易链接：`examples/output/last_run.json` 中的 `tx_explorer`
+- Bounty 材料：`docs/TUTORIAL.md` + `docs/ONBOARDING_TEARDOWN.md`
 
 ## 目录
 
 ```
 agent/        Agent + KeeperHub MCP 封装 + 付款可靠性层
-examples/     运行入口与输出
-docs/         TUTORIAL.md + ONBOARDING_TEARDOWN.md（Bounty）
+examples/     运行入口与输出（run_demo / video_demo / workflow_demo / transfer_demo）
+docs/         TUTORIAL.md + ONBOARDING_TEARDOWN.md（Bounty）+ DEMO_SCRIPT.md（视频录制指南）
+demo/         paykeeper_demo.html（终端演示动画，真实执行回放）
+scripts/      生成演示动画等辅助脚本
 ```
