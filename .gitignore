@@ -22,3 +22,6 @@ examples/output/
 .vscode/
 .idea/
 .DS_Store
+
+# Rust 缓存
+.cargo/
