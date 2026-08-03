@@ -29,12 +29,13 @@ The video shows three real on-chain capabilities executed sequentially in a sing
 
 | Dimension | Implementation |
 |-----------|----------------|
-| **Real execution** | 15+ verifiable Sepolia transactions (all gas-sponsored), not mockups |
+| **Real execution** | 16 verifiable Sepolia transactions (incl. Gas Sponsorship), not mockups |
 | **9 LLM providers** | OpenAI-compatible protocol, switch with one env var (Anthropic / OpenAI / DeepSeek / OpenRouter / Groq / Moonshot / Zhipu / Ollama / custom) |
-| **Reliability** | simulate → idempotent broadcast → exponential backoff retry → status polling → audit trail |
+| **Reliability** | simulate → idempotent broadcast (**same key reused across retries**, no double-pay) → exponential backoff → status polling → audit trail |
+| **True-timer subscriptions** | `agent/subscription.py` cron scheduler auto-pays on schedule; KeeperHub Schedule workflow as platform-side option |
 | **x402 pay-per-use** | EIP-3009 `TransferWithAuthorization` signing + facilitator domain allowlist |
 | **Audit visibility** | Every execution returns `execution_id`, `transactionHash`, status, audit nodes |
-| **Security** | 4 audit fixes shipped (B-01~B-04), full report in `AUDIT_REPORT.md` |
+| **Security** | 6 audit fixes shipped (B-01~B-06, incl. 2 from external review), full report in `AUDIT_REPORT.md` |
 
 ---
 
@@ -160,20 +161,36 @@ request ──► [1] simulate=true pre-flight ──► [2] idempotent broadcas
 
 ### Key implementation
 
-- **Idempotency key**: `paykeeper-{chain}-{asset}-{amount}-{recipient}` — replay-safe
-- **Exponential backoff**: 1s → 2s → 4s → 8s → 16s (max 5 attempts)
+- **Idempotency key**: `uuid4().hex` generated **once per logical execution and reused across all retries** — if the first attempt is already on-chain but the response times out, the retry carries the same key so KeeperHub de-duplicates (no double-pay). Verified by a mock unit test.
+- **Exponential backoff**: 1.5s → 3s → 6s (max 3 attempts)
 - **Status polling**: waits for terminal states (`success | completed | failed | reverted`)
 - **Audit trail**: every execution returns full `audit_trail` (simulate / broadcast / confirm nodes)
 - **x402 facilitator allowlist**: HTTPS-only + suffix allowlist (default `keeperhub.com` only — anti-phishing)
 
+### True-timer subscriptions
+
+`agent/subscription.py` implements a **real cron subscription scheduler** (`SubscriptionManager` + minimal cron parser):
+
+- Each subscription defines a cron (e.g. `0 0 1 * *` = 1st of every month 00:00 UTC)
+- The scheduling loop auto-calls `execute_transfer` when due (reusing the reliability layer)
+- Supports `run_once` (immediate), `--wait` (wait for next scheduled trigger), and concurrent multi-subscription
+- Platform-side option: KeeperHub Schedule workflow (`triggerType=Schedule` + cron), auto-triggered by KeeperHub
+
+```bash
+python examples/subscription_demo.py              # run once + show next trigger
+python examples/subscription_demo.py --wait       # also wait for the scheduled trigger
+```
+
 ### Security audit
 
-Full audit report in [`AUDIT_REPORT.md`](AUDIT_REPORT.md) (4 bugs fixed, 3 follow-ups retained):
+Full audit report in [`AUDIT_REPORT.md`](AUDIT_REPORT.md) (6 bugs fixed, 3 follow-ups retained):
 
 - ✅ B-01: terminal-state judgment (pending no longer misread as success)
 - ✅ B-02: simulate result validation (`wouldRevert` detected)
 - ✅ B-03: x402 facilitator domain allowlist
 - ✅ B-04: x402 amount calculation cleanup
+- ✅ B-05: reuse the same idempotency key across retries (no double-pay; from external review)
+- ✅ B-06: true-timer subscription scheduler (from external review: "subscription was just a one-time transfer")
 
 ---
 
@@ -184,11 +201,13 @@ paykeeper/
 ├── agent/                          # Core modules
 │   ├── keeperhub_mcp.py           # KeeperHub MCP client (35 tools)
 │   ├── payments.py                # Transfer / contract call / workflow (reliability layer)
+│   ├── subscription.py            # True cron subscription scheduler (real timer)
 │   ├── agent.py                   # LangGraph ReAct Agent + 9-provider registry
 │   └── x402_client.py             # EIP-3009 signing + facilitator validation
 ├── examples/                       # Run entry points
 │   ├── run_demo.py                # Default: deterministic transfer + NL Agent
 │   ├── full_demo.py               # 3 real capabilities chained (recommended)
+│   ├── subscription_demo.py       # Subscription scheduler demo (run_once + --wait)
 │   ├── transfer_demo.py           # Transfer-only
 │   ├── video_demo.py              # Single NL Agent (compact narration)
 │   └── workflow_demo.py           # Workflow create→execute→poll
@@ -235,16 +254,16 @@ This project covers virtually every core KeeperHub surface:
 ### ③ Reliability and observability ✅
 
 - ✅ **Failure mode handling**: `simulate` pre-flight rejects `wouldRevert=true` txs
-- ✅ **Retries**: exponential backoff (1s → 2s → 4s → 8s → 16s, max 5 attempts)
+- ✅ **Retries**: exponential backoff (1.5s → 3s → 6s), **reusing the same idempotency key** (mock-tested — prevents double-pay when the first attempt was on-chain but the response timed out)
 - ✅ **Gas handling**: `Gas Sponsorship` (`sponsored:true` verified on multiple txs) + gas estimation & receipts for non-sponsored
 - ✅ **Audit trail usage**: every execution returns `audit_trail` (simulate / broadcast / confirm nodes)
-- ✅ **Idempotency**: `paykeeper-{chain}-{asset}-{amount}-{recipient}` prevents double-broadcast
+- ✅ **Idempotency**: `uuid4().hex` generated once and reused across all retries (KeeperHub de-dups by key)
 
 ### ④ Originality and real-world usefulness ✅
 
 PayKeeper solves a real need: **let anyone who can speak natural language trigger auditable on-chain payments.**
 
-- **Subscription agent**: *"Pay 5 USDC to `0x…` on the 1st of every month"* → Agent schedules a KeeperHub workflow (demo 3).
+- **Subscription agent (true timer)**: `agent/subscription.py` cron scheduler auto-pays on schedule (e.g. *"Pay 5 USDC to `0x…` on the 1st of every month"*); KeeperHub Schedule workflow as platform-side option.
 - **Balance guardian**: *"If my ETH balance drops below 0.5, top it up to 1 ETH"* — conditional payment driven by Agent reasoning.
 - **Pay-per-use**: Agent signs EIP-3009 payments in x402 MPP scenarios (`agent/x402_client.py`).
 - **Batch settlement**: *"Send 0.1 ETH to both these addresses"* → Agent invokes `execute_transfer` multiple times.
@@ -258,7 +277,7 @@ Use cases: DAO treasury payroll, DeFi auto-subscription (VPN/SaaS delegation), A
 - ✅ **Demo script works out of the box**: `python examples/full_demo.py` runs in one command
 - ✅ **Dependency pins**: `mcp<2.0` + `httpx<0.28` (avoids API compat issues, documented in `requirements.txt`)
 - ✅ **Cross-platform**: default `libopenh264` works on any mainstream Linux
-- ✅ **Security audit visible**: `AUDIT_REPORT.md` lists 4 fixed bugs + 3 follow-ups
+- ✅ **Security audit visible**: `AUDIT_REPORT.md` lists 6 fixed bugs + 3 follow-ups
 - ✅ **Zero external DB dependency**: pure Python + MCP, no DB / Redis required
 
 ---

@@ -29,12 +29,13 @@
 
 | 维度 | 实现 |
 |------|------|
-| **真实执行** | Sepolia 上 15+ 笔链上交易可查（全部 sponsored），不是 mockup |
+| **真实执行** | Sepolia 上 16 笔链上交易可查（含 Gas Sponsorship），不是 mockup |
 | **9 个 LLM provider** | OpenAI 兼容协议一行切换（Anthropic / OpenAI / DeepSeek / OpenRouter / Groq / Moonshot / 智谱 / Ollama / 自定义） |
-| **可靠性** | simulate 预飞 → 幂等键广播 → 指数退避 → 状态轮询 → 审计轨迹 |
+| **可靠性** | simulate 预飞 → **重试复用同一幂等键**（防双付）→ 指数退避 → 状态轮询 → 审计轨迹 |
+| **真定时器订阅** | `agent/subscription.py` cron 调度器：到点自动付款；KeeperHub Schedule 工作流作平台侧方案 |
 | **x402 按次付费** | EIP-3009 `TransferWithAuthorization` 签名 + facilitator 域名白名单 |
 | **审计可见** | 每次执行回传 execution_id、transactionHash、状态、审计节点 |
-| **安全** | 完成 4 项审计修复（B-01~B-04），保留 `AUDIT_REPORT.md` |
+| **安全** | 完成 6 项审计修复（B-01~B-06，含 2 项外部评审发现），保留 `AUDIT_REPORT.md` |
 
 ---
 
@@ -155,25 +156,41 @@ python examples/run_demo.py
                 ▼                       ▼                       ▼
           wouldRevert?           transfer-funds           success/failed
             false → 继续           提交真实交易              指数退避重试
-            true  → 拒绝
+            true  → 拒绝           同一幂等键（防双付）
 ```
 
 ### 关键实现
 
-- **幂等键**：`paykeeper-{chain}-{asset}-{amount}-{recipient}` —— 重放安全
-- **指数退避**：默认 1s 起步，2x 递增，最多 5 次
+- **幂等键**：`uuid4().hex` 一次生成、**重试全程复用**（若首笔已上链但响应超时，重试仍是同一张"单"，KeeperHub 去重，绝不双付）—— 已通过 mock 单测验证
+- **指数退避**：默认 1.5s 起步，2x 递增，最多 3 次
 - **状态轮询**：等待 `success | completed | failed | reverted` 终态
 - **审计轨迹**：每次执行回传完整 `audit_trail`（simulate / broadcast / confirm 节点）
 - **x402 facilitator 白名单**：强制 HTTPS + 后缀白名单（默认仅 `keeperhub.com`，防钓鱼）
 
+### 真定时器订阅
+
+`agent/subscription.py` 实现了**真正的 cron 订阅调度器**（`SubscriptionManager` + 最小 cron 解析器）：
+
+- 每个订阅配置 cron（如 `0 0 1 * *` 每月 1 号 00:00 UTC）
+- 调度循环到点自动调用 `execute_transfer`（复用可靠性层）
+- 支持 `run_once` 立即执行、`--wait` 等待下一次定时触发、多订阅并发
+- 平台侧方案：KeeperHub Schedule 工作流（`triggerType=Schedule` + cron），由平台自动触发
+
+```bash
+python examples/subscription_demo.py              # 立即执行一次 + 显示下次触发
+python examples/subscription_demo.py --wait       # 额外等待定时触发并自动执行
+```
+
 ### 安全审计
 
-完整审计报告见 [`AUDIT_REPORT.md`](AUDIT_REPORT.md)（4 项 bug 已修复，3 项 follow-up 保留）：
+完整审计报告见 [`AUDIT_REPORT.md`](AUDIT_REPORT.md)（6 项 bug 已修复，3 项 follow-up 保留）：
 
 - ✅ B-01：执行状态判定（pending 不再误判为 success）
 - ✅ B-02：simulate 结果校验（`wouldRevert` 检测）
 - ✅ B-03：x402 facilitator 域名白名单
 - ✅ B-04：x402 金额计算冗余清理
+- ✅ B-05：重试复用同一幂等键（防双付，外部评审发现）
+- ✅ B-06：真定时器订阅调度器（外部评审发现"订阅只是一次性转账"）
 
 ---
 
@@ -184,11 +201,13 @@ paykeeper/
 ├── agent/                          # 核心模块
 │   ├── keeperhub_mcp.py           # KeeperHub MCP 客户端（35 tools）
 │   ├── payments.py                # 转账 / 合约调用 / 工作流（可靠性层）
+│   ├── subscription.py            # 真正的 cron 订阅调度器（真定时器）
 │   ├── agent.py                   # LangGraph ReAct Agent + 9-provider 注册表
 │   └── x402_client.py             # EIP-3009 签名 + facilitator 校验
 ├── examples/                       # 运行入口
 │   ├── run_demo.py                # 默认：确定性转账 + NL Agent
 │   ├── full_demo.py               # 3 个真实能力串联（推荐演示）
+│   ├── subscription_demo.py       # 订阅调度器演示（run_once + --wait 定时触发）
 │   ├── transfer_demo.py           # 仅转账
 │   ├── video_demo.py              # 单次 NL Agent（紧凑叙事）
 │   └── workflow_demo.py           # 工作流创建→执行→轮询
@@ -235,16 +254,16 @@ paykeeper/
 ### ③ Reliability and observability ✅
 
 - ✅ **失败模式处理**：`simulate` 预飞拒绝 `wouldRevert=true` 的交易
-- ✅ **重试机制**：指数退避（1s → 2s → 4s → 8s → 16s，最多 5 次）
+- ✅ **重试机制**：指数退避（1.5s → 3s → 6s），重试**复用同一幂等键**（已 mock 单测验证，防"首笔已上链但响应超时→重试双付"）
 - ✅ **Gas 处理**：`Gas Sponsorship`（`sponsored:true` 多笔验证）+ 非赞助场景的 gas 估算与回执
 - ✅ **审计使用**：每次执行回传 `audit_trail` 节点列表（simulate / broadcast / confirm）
-- ✅ **幂等键**：防止同一交易重复广播（`paykeeper-{chain}-{asset}-{amount}-{recipient}`）
+- ✅ **幂等键**：`uuid4().hex` 一次生成、重试全程复用（KeeperHub 按 key 去重）
 
 ### ④ Originality and real-world usefulness ✅
 
 PayKeeper 解决一个真实需求：**让任何能说自然语言的人都能发起可审计的链上付款**。
 
-- **订阅代理**：用户一句"每月 1 号给 `0x…` 付 5 USDC"，Agent 调度 KeeperHub 工作流自动执行（演示 3）
+- **订阅代理（真定时器）**：`agent/subscription.py` cron 调度器到点自动付款（如"每月 1 号给 `0x…` 付 5 USDC"）；平台侧可用 KeeperHub Schedule 工作流
 - **余额守卫**："查询余额后若低于 0.5 ETH 就补足到 1 ETH" 类条件支付（Agent 推理可执行）
 - **按次付费**：x402 MPP 场景下 Agent 自动签名 EIP-3009 付款（`agent/x402_client.py`）
 - **批量结算**：自然语言"把这两个地址各转 0.1 ETH" → Agent 多次调用 `execute_transfer`
@@ -258,7 +277,7 @@ PayKeeper 解决一个真实需求：**让任何能说自然语言的人都能�
 - ✅ **演示脚本开箱即用**：`python examples/full_demo.py` 一行运行
 - ✅ **依赖锁定**：`mcp<2.0` + `httpx<0.28` 避免 API 兼容问题（requirements.txt）
 - ✅ **多平台兼容**：默认 `libopenh264` 在所有主流 Linux 都能跑
-- ✅ **安全审计可见**：`AUDIT_REPORT.md` 列出 4 个已修 bug + 3 个 follow-up
+- ✅ **安全审计可见**：`AUDIT_REPORT.md` 列出 6 个已修 bug + 3 个 follow-up
 - ✅ **零外部数据库依赖**：纯 Python + MCP，不引入 DB / Redis
 
 ---

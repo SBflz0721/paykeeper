@@ -1,9 +1,9 @@
 # PayKeeper 安全审计报告
 
 - **审计对象**：PayKeeper（KeeperHub Agents Onchain Hackathon 参赛项目）
-- **审计日期**：2026-08-03
+- **审计日期**：2026-08-03（修订 2026-08-04）
 - **审计范围**：`agent/`、`examples/`、`docs/`、`.env*`、`requirements.txt`、`mcp_config.json`
-- **审计方式**：静态代码审查 + 真实链上执行验证（6 笔 Sepolia 交易）+ git 敏感信息核查
+- **审计方式**：静态代码审查 + 真实链上执行验证（16 笔 Sepolia 交易）+ git 敏感信息核查
 
 ---
 
@@ -11,9 +11,9 @@
 
 | 类别 | 结果 |
 |------|------|
-| 真实交易验证 | ✅ 6 笔 Sepolia 交易经 KeeperHub 执行成功 |
+| 真实交易验证 | ✅ 16 笔 Sepolia 交易经 KeeperHub 执行成功 |
 | 敏感信息泄露 | ⚠️ 1 项（`kh_` Key 暴露于对话；已确保不进 git），**建议轮换** |
-| 已修复 bug/漏洞 | 4 项（1 高、2 中、1 低） |
+| 已修复 bug/漏洞 | 6 项（2 高、2 中、2 低） |
 | 待跟进事项 | 3 项（中/低/信息） |
 
 ---
@@ -55,6 +55,18 @@
 - **发现**：存在先乘 `10**decimals` 又被覆盖的死代码；若 `maxAmountRequired` 本就是最小精度，错误换算会导致多付/少付。
 - **修复**：删除死代码，直接采用 `maxAmountRequired`（最小精度），并校验 `amount>0`、`payTo` 非空。
 
+### [B-05] 重试重新生成幂等键 = 双付风险（高，资金安全）⚠️ 外部评审发现
+- **位置**：`agent/payments.py` `execute_transfer`
+- **发现**：幂等键在**每次重试**都重新生成（原代码 `for attempt: args = {**base_args, "idempotency_key": uuid.uuid4().hex}`）。若第一笔已上链但响应超时，重试携带**新** key，KeeperHub 视为全新请求 → 再次转账 = **双付**。评审结论："每次重试都重新生成幂等键，等于换张新单"。
+- **修复**：幂等键在整个执行逻辑（含所有重试）只生成一次，重试复用同一 key；KeeperHub 按 key 去重。
+- **验证**：mock「第一次广播超时、第二次成功」，断言两次广播 `idempotency_key` 相同 ✅。
+
+### [B-06] 订阅没有真定时器 = 一次性转账（中）⚠️ 外部评审发现
+- **位置**：`agent/payments.py` `run_subscription_once`、`examples/workflow_demo.py`
+- **发现**：原 `run_subscription_once` 只是立即执行一次转账（注释自己写明"循环调度见 README/工作流方案"）；`workflow_demo.py` 的 Schedule 触发器只配置了 cron 但**手动执行**，未证明到点自动触发。
+- **修复**：新增 `agent/subscription.py` —— 真正的本地 cron 调度器（`SubscriptionManager` + 最小 cron 解析器），到点自动调用 `execute_transfer`（复用可靠性层）。新增 `examples/subscription_demo.py`（run_once 立即执行 + `--wait` 等待定时触发）。
+- **验证**：cron 解析 9/9 用例通过（含周字段、闰年、`*/15`、周 0/7）；`subscription_demo.py` 实跑产生真实交易 `0x424af7e9…` ✅。
+
 ---
 
 ## 3. 待跟进（未修改，已在计划中）
@@ -79,8 +91,11 @@
 |----|------|
 | `py_compile` 全部模块 | ✅ 通过 |
 | `_facilitator_allowed` 单测（5 用例） | ✅ 通过 |
+| cron 解析单测（9 用例） | ✅ 通过 |
+| 幂等键重试复用单测（mock 首播超时→重试） | ✅ 两次广播同 key |
 | 修复后 `transfer_demo.py` 实跑 | ✅ `ok=true, tx_hash=0x8bc5…, status=completed` |
-| git 暂存核查 | ✅ `.env` 被忽略，16 个文件无敏感内容 |
+| `subscription_demo.py` 实跑 | ✅ 真实交易 `0x424af7e9…, status=completed` |
+| git 暂存核查 | ✅ `.env` 被忽略，24 个文件无敏感内容 |
 
 ## 5. 遗留风险
 

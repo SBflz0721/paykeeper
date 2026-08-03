@@ -159,9 +159,12 @@ async def execute_transfer(
             trail.append({"step": "simulate", "result": f"skipped: {e}", "ts": _now()})
 
     # 2) 幂等广播 + 重试
+    # 幂等键在整个执行逻辑（含所有重试）只生成一次：
+    # 若第一笔已上链但响应超时，重试必须携带同一 key，让 KeeperHub 去重，避免双付。
+    idempotency_key = uuid.uuid4().hex
     last_err = ""
     for attempt in range(1, max_retries + 1):
-        args = {**base_args, "idempotency_key": uuid.uuid4().hex}
+        args = {**base_args, "idempotency_key": idempotency_key}
         try:
             res = await kh.call_tool("execute_transfer", args)
             trail.append({"step": f"broadcast#{attempt}", "result": _safe(res), "ts": _now()})
