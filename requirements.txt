@@ -1,0 +1,27 @@
+# PayKeeper — 依赖清单
+# 核心：LangChain + MCP 适配器 + LangGraph + KeeperHub 远程 MCP 客户端
+
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-anthropic>=0.3.0
+# openai / deepseek 共用：两者都是 OpenAI 兼容 API
+langchain-openai>=0.3.0
+langchain-mcp-adapters>=0.0.9
+langgraph>=0.2.0
+
+# 传输层版本锁定（关键！）
+# - mcp 必须 <2.0.0：langchain-mcp-adapters 0.3.x 从 mcp.shared.context 导入 RequestContext，
+#   mcp 2.0 已移除该符号会 ImportError。
+# - httpx 锁定 0.27.x：避免被 mcp 2.0 拉入的 httpx2 分支导致 streamable_http 握手异常。
+mcp>=1.24.0,<2.0.0
+httpx>=0.27.0,<0.28.0
+httpcore>=1.0.0,<2.0.0
+
+# 工具
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+requests>=2.31.0
+
+# x402 按次付费（手动签名 EIP-3009 时使用，可选）
+eth-account>=0.13.0
+eth-utils>=5.0.0
