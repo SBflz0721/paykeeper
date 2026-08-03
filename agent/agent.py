@@ -34,22 +34,23 @@ SYSTEM_PROMPT = """你是 PayKeeper —— 一个经 KeeperHub 在链上自动�
 
 # OpenAI 兼容 provider 注册表（langchain_openai.ChatOpenAI 只需换 base_url / model）
 # base_url=None 表示用 openai 官方默认端点。
+# 默认模型按 2026-08 各 provider 官方最新发布版本更新。
 OPENAI_COMPATIBLE_PROVIDERS: dict[str, dict[str, Any]] = {
     "openai": {
         "base_url": None,
-        "default_model": "gpt-4o",
+        "default_model": "gpt-5",
         "env_key": "OPENAI_API_KEY",
         "label": "OpenAI",
     },
     "deepseek": {
         "base_url": "https://api.deepseek.com",
-        "default_model": "deepseek-chat",
+        "default_model": "deepseek-v4-flash",
         "env_key": "DEEPSEEK_API_KEY",
         "label": "DeepSeek",
     },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
-        "default_model": "openai/gpt-4o-mini",
+        "default_model": "anthropic/claude-sonnet-4.5",
         "env_key": "OPENROUTER_API_KEY",
         "label": "OpenRouter",
     },
@@ -61,19 +62,19 @@ OPENAI_COMPATIBLE_PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "moonshot": {
         "base_url": "https://api.moonshot.cn/v1",
-        "default_model": "moonshot-v1-8k",
+        "default_model": "kimi-k2.5",
         "env_key": "MOONSHOT_API_KEY",
         "label": "Moonshot / Kimi",
     },
     "zhipu": {
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "default_model": "glm-4-flash",
+        "default_model": "glm-4.6",
         "env_key": "ZHIPU_API_KEY",
         "label": "智谱 GLM",
     },
     "ollama": {
         "base_url": "http://localhost:11434/v1",
-        "default_model": "llama3.1",
+        "default_model": "qwen3:14b",
         "env_key": "OLLAMA_API_KEY",
         "optional_key": True,
         "label": "Ollama（本地）",
@@ -98,7 +99,7 @@ def build_llm():
                 f"未设置 ANTHROPIC_API_KEY（或把 LLM_PROVIDER 改为 {provider_names()} 之一）"
             )
         return ChatAnthropic(
-            model=model or "claude-sonnet-4-20250514", api_key=key, temperature=0
+            model=model or "claude-sonnet-4-5", api_key=key, temperature=0
         )
 
     # 任意 OpenAI 兼容端点（自定义）：用 OPENAI_COMPATIBLE_BASE_URL / API_KEY / MODEL
