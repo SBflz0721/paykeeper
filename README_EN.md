@@ -157,9 +157,18 @@ python examples/workflow_demo.py       # workflow create -> execute -> poll
 `web/` provides a browser UI (FastAPI + vanilla HTML, zero build):
 
 ```bash
-uvicorn web.app:app --host 0.0.0.0 --port 8000
-# open http://localhost:8000
+# Secure start: bind to loopback only + set an auth token
+# (this Dashboard can create rules and trigger real on-chain transfers,
+#  so do NOT expose it on 0.0.0.0)
+DASHBOARD_TOKEN=<your-random-token> uvicorn web.app:app --host 127.0.0.1 --port 8000
+# open http://127.0.0.1:8000 (first load asks for DASHBOARD_TOKEN, browser remembers it)
 ```
+
+> Security notes:
+> - **Always bind `127.0.0.1`, not `0.0.0.0`**: this Dashboard can create rules and send real on-chain transfers; exposing it to your LAN hands the wallet to the network.
+> - **Set `DASHBOARD_TOKEN`**: every `/api/*` (except `/health`) requires `Authorization: Bearer <token>`; if unset, auth is disabled (loopback-only use).
+> - **`chain_id` allowlist**: execution only allows chains in `PAYKEEPER_ALLOWED_CHAIN_IDS` (default Sepolia 11155111 / Base Sepolia 84532); mainnet requests are rejected.
+> - **Custom provider needs allowlist**: `/api/provider` custom `base_url` must match `OPENAI_COMPATIBLE_BASE_URL_ALLOWLIST`, otherwise the LLM key could be exfiltrated to an attacker server.
 
 | Tab | What it does |
 |-----|--------------|

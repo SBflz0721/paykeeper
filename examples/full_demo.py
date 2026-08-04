@@ -78,14 +78,21 @@ async def kh_call_transfer(kh, amount: str) -> dict:
 
 
 async def demo2_agent(kh) -> None:
-    p("\n【演示 2/3】自然语言 Agent（DeepSeek 推理 + KeeperHub MCP 工具）")
+    p("\n【演示 2/3】自然语言 Agent（DeepSeek 推理 + KeeperHub MCP 工具，已接入风控）")
     from agent import agent as nl_agent
+    from agent.policy import PolicyEngine, make_demo_rule
 
     instruction = "请经 KeeperHub 查一下我组织钱包的 ETH 余额，并汇报金额和链。"
     p(f"  用户指令: {instruction}")
     p("  Agent 规划与执行中...")
-    result = await nl_agent.run_instruction(kh, instruction)
+    # 强制接入风控：Agent 路径只允许付给 demo 收款地址、限额内金额
+    engine = PolicyEngine()
+    rule_id = engine.add_rule(make_demo_rule(RECIPIENT, AMOUNT_1, name="full-demo-agent-rule"))
+    result = await nl_agent.run_instruction(
+        kh, instruction, policy_engine=engine, policy_rule_id=rule_id
+    )
     answer = nl_agent.final_answer(result)
+    engine.close()
     p("  --- Agent 汇报 ---")
     for line in answer.splitlines()[:22]:
         p("  " + line)

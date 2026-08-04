@@ -31,6 +31,7 @@ load_dotenv()
 
 from agent.keeperhub_mcp import KeeperHubMCP
 from agent.subscription import SubscriptionConfig, SubscriptionManager
+from agent.policy import PolicyEngine, make_demo_rule
 
 
 async def main() -> None:
@@ -47,6 +48,9 @@ async def main() -> None:
         return
 
     async with KeeperHubMCP() as kh:
+        # 订阅接入风控：只允许付给 demo 收款地址、限额内金额
+        engine = PolicyEngine()
+        rule_id = engine.add_rule(make_demo_rule(recipient, amount, name="sub-demo-rule"))
         mgr = SubscriptionManager(kh, check_interval=5.0)
         sub_id = mgr.add(SubscriptionConfig(
             name="demo-sub",
@@ -54,14 +58,16 @@ async def main() -> None:
             to_address=recipient,
             amount=amount,
             cron=args.cron,
+            policy_engine=engine,
+            policy_rule_id=rule_id,
         ))
         print("=" * 62)
-        print("  PayKeeper 订阅调度器演示")
+        print("  PayKeeper 订阅调度器演示（已接入风控）")
         print(f"  收款方 : {recipient} | 金额 {amount} {os.getenv('DEMO_TOKEN_ADDRESS') or 'ETH'}")
         print(f"  cron   : {args.cron} | 下次触发 {mgr.next_run(sub_id)}")
         print("=" * 62)
 
-        # 1) 立即执行一次（产生真实交易）
+        # 1) 立即执行一次（产生真实交易；周期幂等键防止跨重启/并发双付）
         print("\n[1] 立即执行一次（run_once，真实上链）...")
         res = await mgr.run_once(sub_id)
         print(json.dumps(res.to_report(), indent=2, ensure_ascii=False))
@@ -76,6 +82,7 @@ async def main() -> None:
             print("下一次触发已执行（见上方日志）")
 
         print("\n调度器会持续按 cron 自动付款。取消任务即停止。")
+        engine.close()
 
 
 if __name__ == "__main__":

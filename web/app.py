@@ -24,9 +24,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from agent.keeperhub_mcp import KeeperHubMCP
@@ -38,6 +38,33 @@ ROOT_DIR = WEB_DIR.parent
 DATA_DIR = ROOT_DIR / "data"
 PROVIDER_CONFIG_FILE = DATA_DIR / "provider.json"
 KEEPERHUB_CONFIG_FILE = DATA_DIR / "keeperhub.json"
+
+# ----------------------------------------------------------------------
+# 鉴权（Dashboard 必须防住：谁能建规则谁就能转账）
+# ----------------------------------------------------------------------
+# 设置 DASHBOARD_TOKEN 后，所有 /api/*（除 /health）都要求
+#   Authorization: Bearer <DASHBOARD_TOKEN>
+# 未设置时不启用鉴权（仅限本机 127.0.0.1 使用，见 README 启动命令）。
+def dashboard_token() -> str:
+    return os.getenv("DASHBOARD_TOKEN", "").strip()
+
+
+# 自定义 OpenAI 兼容端点 base_url 白名单（防止 /api/provider 把 LLM key 转发到攻击者服务器）
+def custom_base_url_allowed(url: str) -> bool:
+    from urllib.parse import urlparse
+
+    allow = {
+        h.strip().lower()
+        for h in os.getenv("OPENAI_COMPATIBLE_BASE_URL_ALLOWLIST", "").split(",")
+        if h.strip()
+    }
+    if not allow:
+        return False  # 未显式配置白名单 -> 禁止自定义 base_url（key 外带风险）
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    return any(host == a or host.endswith("." + a) for a in allow)
 
 # ----------------------------------------------------------------------
 # 全局单例
@@ -124,8 +151,21 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    token = dashboard_token()
+    path = request.url.path
+    if token and path.startswith("/api/") and path != "/health":
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {token}":
+            return JSONResponse(
+                status_code=401,
+                content={"ok": False, "error": "未授权：请设置 DASHBOARD_TOKEN 并以 Bearer 方式携带"},
+            )
+    return await call_next(request)
+
+
 # 全局异常处理：避免向客户端裸抛 500（兼容审计要求）
-from fastapi.responses import JSONResponse  # noqa: E402
 from fastapi.exceptions import RequestValidationError  # noqa: E402
 
 
@@ -166,7 +206,6 @@ class ProviderIn(BaseModel):
 
 
 class KeeperHubConfigIn(BaseModel):
-    api_key: str = ""
     wallet_integration_id: str = ""
 
 
@@ -236,7 +275,10 @@ async def create_rule(body: RuleIn) -> dict:
         daily_limit_wei=int(body.daily_limit_eth * 10**18),
         cron=body.cron,
     )
-    rule_id = policy().add_rule(rule)
+    try:
+        rule_id = policy().add_rule(rule)
+    except ValueError as e:
+        raise HTTPException(422, str(e))  # 白名单含非法地址：拒绝，绝不静默降级为「不限」
     return policy().get_rule(rule_id) or {}
 
 
@@ -260,6 +302,10 @@ async def delete_rule(rule_id: str) -> dict:
 # ----------------------------------------------------------------------
 @app.post("/api/execute")
 async def execute(body: ExecuteIn) -> dict:
+    # 链白名单（fail-closed）：请求方不能把交易指到主网等任意网络
+    allowed = payments.allowed_chain_ids()
+    if body.chain_id not in allowed:
+        raise HTTPException(422, f"链不在允许名单: {body.chain_id}（允许 {sorted(allowed)}）")
     result = await payments.execute_transfer(
         kh(),
         chain_id=body.chain_id,
@@ -332,8 +378,16 @@ async def set_provider(body: ProviderIn) -> dict:
         raise HTTPException(422, f"未知 provider: {provider}")
     if not body.model.strip():
         raise HTTPException(422, "请填写模型名（代码不预设默认模型）")
-    if provider == "custom" and not body.base_url.strip():
-        raise HTTPException(422, "custom 需要 base_url")
+    if provider == "custom":
+        if not body.base_url.strip():
+            raise HTTPException(422, "custom 需要 base_url")
+        # 自定义 base_url 必须命中白名单，防止 LLM key 被转发到攻击者服务器
+        if not custom_base_url_allowed(body.base_url.strip()):
+            raise HTTPException(
+                422,
+                "custom base_url 不在白名单：请设置 OPENAI_COMPATIBLE_BASE_URL_ALLOWLIST"
+                " 并只填入可信域名（防止 API Key 外带）",
+            )
 
     # 校验：除 ollama 外必须填 key；为空时保留已配置的 key
     # （前端只改模型/地址时无需重输 API Key）
@@ -368,7 +422,7 @@ async def set_provider(body: ProviderIn) -> dict:
 async def wallet() -> dict:
     integration_id = os.getenv("WALLET_INTEGRATION_ID", "")
     if not integration_id:
-        return {"wallet": None, "hint": "请在 .env 设置 WALLET_INTEGRATION_ID（KeeperHub 钱包 integrationId）"}
+        return {"wallet": None, "hint": "请在 Dashboard 的 KeeperHub 标签页配置 Wallet Integration ID（或 .env 设置 WALLET_INTEGRATION_ID）"}
     try:
         raw = await kh().call_tool("get_wallet_integration", {"integrationId": integration_id})
         return {"wallet": raw}
@@ -390,11 +444,13 @@ def _load_keeperhub_config() -> dict:
 
 
 def _apply_keeperhub_config(cfg: dict) -> None:
-    """把 KeeperHub 配置写入进程环境变量（运行时生效，不修改 .env）。"""
-    api_key = str(cfg.get("api_key", "")).strip()
+    """把 KeeperHub 配置写入进程环境变量（运行时生效，不修改 .env）。
+
+    注意：KEEPERHUB_API_KEY 不在这里处理——MCP 连接在启动时建立，前端保存的
+    key 不会重新连接，属于死代码；API Key 必须在启动前通过 .env 设置。
+    这里只处理「请求时读取」的 WALLET_INTEGRATION_ID。
+    """
     wallet_id = str(cfg.get("wallet_integration_id", "")).strip()
-    if api_key:
-        os.environ["KEEPERHUB_API_KEY"] = api_key
     if wallet_id:
         os.environ["WALLET_INTEGRATION_ID"] = wallet_id
 
@@ -405,41 +461,30 @@ async def get_keeperhub_config() -> dict:
     env_key = os.getenv("KEEPERHUB_API_KEY", "")
     env_wallet = os.getenv("WALLET_INTEGRATION_ID", "")
     return {
-        "api_key_masked": _mask_key(cfg.get("api_key", "") or env_key),
-        "wallet_integration_id": cfg.get("wallet_integration_id", "") or env_wallet,
+        # KEEPERHUB_API_KEY 只读展示（启动时生效，前端不保存）
+        "api_key_masked": _mask_key(env_key),
         "has_key": bool(env_key),
+        "wallet_integration_id": cfg.get("wallet_integration_id", "") or env_wallet,
         "has_wallet_id": bool(env_wallet),
-        "needs_restart": bool(cfg),
     }
 
 
 @app.post("/api/keeperhub-config")
 async def set_keeperhub_config(body: KeeperHubConfigIn) -> dict:
-    api_key = body.api_key.strip()
+    # 只管理 Wallet Integration ID（请求时读取，真实生效）；
+    # KEEPERHUB_API_KEY 需在 .env 设置（MCP 连接启动时建立，前端保存无效，故不提供）。
     wallet_id = body.wallet_integration_id.strip()
-
-    # 为空时保留已保存/已生效的值（前端只改一项时不会丢另一项）
-    existing = _load_keeperhub_config()
-    if not api_key:
-        api_key = str(existing.get("api_key", "")).strip() or os.getenv("KEEPERHUB_API_KEY", "").strip()
     if not wallet_id:
-        wallet_id = str(existing.get("wallet_integration_id", "")).strip() or os.getenv("WALLET_INTEGRATION_ID", "").strip()
-
-    if not api_key and not wallet_id:
-        raise HTTPException(422, "至少需要填写 API Key 或 Wallet Integration ID 之一")
+        raise HTTPException(422, "请填写 Wallet Integration ID")
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     KEEPERHUB_CONFIG_FILE.write_text(
-        json.dumps({
-            "api_key": api_key,
-            "wallet_integration_id": wallet_id,
-        }, ensure_ascii=False, indent=2),
+        json.dumps({"wallet_integration_id": wallet_id}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     _apply_keeperhub_config(_load_keeperhub_config())
     return {
         "ok": True,
-        "api_key_masked": _mask_key(api_key),
         "wallet_integration_id": wallet_id,
-        "warning": "KeeperHub 连接已在启动时建立。若 API Key 变更，请重启 Dashboard 以使新 Key 生效。",
+        "note": "KEEPERHUB_API_KEY 需在启动前于 .env 配置（MCP 连接在启动时建立）。",
     }

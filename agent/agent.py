@@ -151,18 +151,115 @@ def build_llm():
     )
 
 
-async def build_agent(kh: KeeperHubMCP):
-    """用 KeeperHub 工具 + LLM 构建 ReAct Agent。"""
+# 需要被风控包装的「动钱」工具：Agent 调用它们前必须先过 policy 校验
+MONEY_TOOLS = {"execute_transfer", "execute_contract_call", "execute_check_and_execute"}
+
+
+async def _wrap_policy_tool(
+    tool,
+    policy_engine,
+    policy_rule_id: str,
+    chain_allowlist: set[str],
+) -> Any:
+    """包装一个资金工具：调用前强制 policy 校验 + 链白名单，不通过直接拒绝。"""
+    from .payments import _amount_to_wei, allowed_chain_ids
+    from .policy import ADDRESS_RE
+
+    name = tool.name
+    original = tool.func  # LangChain StructuredTool 的可调用体
+
+    async def guarded(**kwargs: Any) -> Any:
+        # 链白名单
+        chain = str(kwargs.get("chain_id") or kwargs.get("chainId") or "")
+        allow = chain_allowlist or allowed_chain_ids()
+        if chain and chain not in allow:
+            return {"ok": False, "error": f"风控拦截: 链不在允许名单 chain_id={chain}（允许 {sorted(allow)}）"}
+        if not chain:
+            return {"ok": False, "error": "风控拦截: 缺少 chain_id"}
+
+        # 金额解析（fail-closed）+ 收款地址
+        to_address = kwargs.get("to_address") or kwargs.get("toAddress") or ""
+        token_address = kwargs.get("token_address") or kwargs.get("tokenAddress")
+        amount = str(kwargs.get("amount", ""))
+        if not ADDRESS_RE.match(to_address):
+            return {"ok": False, "error": f"风控拦截: 收款地址格式非法 {to_address!r}"}
+        amount_wei, parse_err = _amount_to_wei(amount, token_address)
+        if parse_err:
+            return {"ok": False, "error": f"风控拦截: {parse_err}"}
+
+        verdict = policy_engine.check(policy_rule_id, to_address, amount_wei)
+        if not verdict.ok:
+            return {"ok": False, "error": f"风控拦截: {verdict.reason}"}
+
+        result = await original(**kwargs)
+        # 记账（仅 execute_transfer 类成功时；contract call 无法可靠推算金额，跳过记账）
+        if name == "execute_transfer" and policy_engine is not None:
+            try:
+                flat = result if isinstance(result, dict) else {}
+                tx_hash = str(flat.get("tx_hash") or flat.get("txHash") or "")
+                policy_engine.record_success(policy_rule_id, to_address, amount_wei, tx_hash)
+            except Exception:
+                pass
+        return result
+
+    # 返回一个新的 StructuredTool，保留名称与描述，替换 func
+    from langchain_core.tools import StructuredTool
+
+    return StructuredTool.from_function(
+        coroutine=guarded,
+        name=tool.name,
+        description=tool.description or "",
+        args_schema=getattr(tool, "args_schema", None),
+    )
+
+
+async def build_agent(
+    kh: KeeperHubMCP,
+    policy_engine=None,
+    policy_rule_id: str = "",
+    chain_allowlist: set[str] | None = None,
+):
+    """用 KeeperHub 工具 + LLM 构建 ReAct Agent。
+
+    安全约束（fail-closed）：
+    - 必须传入 policy_engine 与 policy_rule_id，否则不暴露任何资金工具；
+    - execute_transfer / execute_contract_call / execute_check_and_execute
+      会被包装：调用前强制链白名单 + 风控校验，不通过直接返回拒绝，绝不触达链上。
+    """
     from langgraph.prebuilt import create_react_agent
 
-    tools = kh.get_tools()
+    if policy_engine is None:
+        raise RuntimeError(
+            "Agent 路径必须接入风控层：请传入 policy_engine 与 policy_rule_id，"
+            "否则不向 LLM 暴露资金工具（防止提示词注入/越权转账）。"
+        )
+
+    tools = []
+    for t in kh.get_tools():
+        if t.name in MONEY_TOOLS:
+            tools.append(
+                await _wrap_policy_tool(t, policy_engine, policy_rule_id, chain_allowlist or set())
+            )
+        else:
+            tools.append(t)
     llm = build_llm()
     return create_react_agent(llm, tools, prompt=SYSTEM_PROMPT)
 
 
-async def run_instruction(kh: KeeperHubMCP, text: str) -> dict[str, Any]:
-    """执行一条自然语言指令，返回 LangGraph 结果（含 messages）。"""
-    agent = await build_agent(kh)
+async def run_instruction(
+    kh: KeeperHubMCP,
+    text: str,
+    policy_engine=None,
+    policy_rule_id: str = "",
+    chain_allowlist: set[str] | None = None,
+) -> dict[str, Any]:
+    """执行一条自然语言指令，返回 LangGraph 结果（含 messages）。
+
+    强制接入风控：未提供 policy_engine/policy_rule_id 时直接抛错，避免绕过风控。
+    """
+    agent = await build_agent(kh, policy_engine=policy_engine,
+                              policy_rule_id=policy_rule_id,
+                              chain_allowlist=chain_allowlist)
     result = await agent.ainvoke({"messages": [("user", text)]})
     return result
 

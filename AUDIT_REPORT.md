@@ -13,7 +13,7 @@
 |------|------|
 | 真实交易验证 | 通过：18 笔 Sepolia 交易经 KeeperHub 执行成功 |
 | 敏感信息泄露 | 注意：1 项（`kh_` Key 暴露于对话；已确保不进 git），**建议轮换** |
-| 已修复 bug/漏洞 | 6 项（2 高、2 中、2 低） |
+| 已修复 bug/漏洞 | **17 项**（B-01~B-07、F-04、S-03~S-11：含 3 高危 + 5 中危安全加固，见第 7 节） |
 | 待跟进事项 | 3 项（中/低/信息） |
 
 ---
@@ -137,3 +137,56 @@
 | `POST /api/execute` | 通过：风控拦截（白名单/限额）返回 `rejected` 并记录；合法请求真实上链（第 18 笔 `0x65203c…`，审计 policy->simulate->broadcast） |
 | `GET /api/executions` | 通过：全审计记录（含 rejected 原因） |
 | `GET /api/wallet` | 通过：返回 KeeperHub 托管钱包（需 `.env` 配 `WALLET_INTEGRATION_ID`） |
+
+---
+
+## 7. 第三轮审计（2026-08-04，安全加固专项）
+
+外部安全评审发现 3 高危 + 5 中危，均已修复并测试：
+
+### 高危
+
+- **[S-03] Dashboard 完全无鉴权（已修复）**：README 原先教绑 `0.0.0.0`，同网段任何人可建规则 / 转账。
+  修复：新增 `DASHBOARD_TOKEN` 鉴权——设置后所有 `/api/*`（除 `/health`）要求 `Authorization: Bearer <token>`；README 改为只绑 `127.0.0.1`。
+  验证：无 token 访问 `/api/rules` 返回 401，带 token 返回 200。
+
+- **[S-04] chain_id 由请求方任意传（已修复）**：请求方可直接指到主网。
+  修复：`PAYKEEPER_ALLOWED_CHAIN_IDS` 白名单（默认仅 Sepolia 11155111 / Base Sepolia 84532），
+  `payments.execute_transfer` 与 `web /api/execute` 双重校验，不在名单直接拒绝。
+  验证：`chain_id=1`（主网）返回 422。
+
+- **[S-05] Agent 自然语言路径完全绕过风控（已修复）**：35 个工具全绑 LLM，提示词注入可任意转账/调合约。
+  修复：`build_agent`/`run_instruction` 强制要求 `policy_engine` + `policy_rule_id`（缺失即抛错），
+  并将 `execute_transfer` / `execute_contract_call` / `execute_check_and_execute` 包装为「先风控后执行」：
+  链白名单 -> 地址格式 -> 金额解析（fail-closed）-> 风控校验（白名单/单笔/每日限额），不通过直接返回拒绝，绝不触达链上。
+  验证：包装器对非白名单地址 / 主网链 / 超限金额 / 非法金额 / 缺 chain_id 全部拒绝（5/5）。
+
+- **[S-06] `/api/provider` 可把 LLM key 转发到攻击者服务器（已修复）**：custom base_url 可指向任意域名。
+  修复：自定义 base_url 必须命中 `OPENAI_COMPATIBLE_BASE_URL_ALLOWLIST`，未配置则禁止 custom provider。
+  验证：`https://evil.example.com/v1` 返回 422。
+
+### 中危
+
+- **[S-07] 前端保存的 KeeperHub key 是死代码（已修复）**：MCP 连接在启动时建立，前端保存的 key 不会重新连接。
+  修复：移除前端 KeeperHub API Key 输入与保存（后端 `_apply_keeperhub_config` 不再写 `KEEPERHUB_API_KEY`）；
+  API Key 明确只在 `.env` 配置；前端只保留「请求时读取」的 Wallet Integration ID 配置，并注明原因。
+
+- **[S-08] 风控金额解析失败置 0 放行（已修复）**：`execute_transfer` 解析异常时 `amount_wei=0` 可绕过限额。
+  修复：`_amount_to_wei` 解析失败返回错误，调用方 fail-closed 直接拒绝，绝不置 0；
+  原生币用 Decimal 换算避免 float 精度误差；负值/NaN/非法输入全部拒绝。
+  验证：`"abc"` / `"-1"` 均被拒绝。
+
+- **[S-09] 白名单非法地址被静默删除 -> 受限变不限（已修复）**：`add_rule` 过滤非法地址会让规则悄悄变「不限」。
+  修复：`add_rule` 遇任一非法白名单地址直接 `ValueError`，`/api/rules` 转 422，绝不静默降级。
+  验证：`"not-an-address"` 返回 422。
+
+- **[S-10] 订阅重启重复付同一期（已修复）**：调度器无持久状态、无周期幂等。
+  修复：`SubscriptionManager` 持久化 `last_run` 到 `data/subscriptions.json`，
+  重启后以「上次运行」为锚点计算下次触发（不会重付已付周期）；
+  每个周期派生确定性幂等键 `paykeeper-sub:{id}:{周期}`，跨实例/并发也由 KeeperHub 去重。
+  验证：cron 锚定 last_run 后 next 跳到下一周期；同周期幂等键稳定。
+
+- **[S-11] x402 金额完全信任 challenge（已修复）**：`settle` 直接采用 `maxAmountRequired`，恶意工作流可诱导大额签名。
+  修复：新增 `X402_MAX_AMOUNT_WEI`（默认 100 USDC）上限 + `X402_ASSET_ALLOWLIST` 资产白名单，
+  超限/非白名单资产一律拒绝。
+  验证：`maxAmountRequired=999999999999` 返回「超过单笔上限」。

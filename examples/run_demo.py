@@ -31,6 +31,7 @@ load_dotenv()
 from agent.keeperhub_mcp import KeeperHubMCP
 from agent import payments
 from agent import agent as nl_agent
+from agent.policy import PolicyEngine, make_demo_rule
 
 EXPLORERS = {
     "1": "https://etherscan.io/tx/{}",
@@ -47,9 +48,14 @@ def explorer_url(chain_id: str, tx_hash: str) -> str:
     return tpl.format(tx_hash) if tpl and tx_hash else ""
 
 
-async def run_demo_instruction(kh: KeeperHubMCP, instruction: str) -> str:
+async def run_demo_instruction(
+    kh: KeeperHubMCP, instruction: str, policy_engine, policy_rule_id: str
+) -> str:
     print(f"\n=== Agent 执行自然语言指令 ===\n> {instruction}\n")
-    result = await nl_agent.run_instruction(kh, instruction)
+    result = await nl_agent.run_instruction(
+        kh, instruction,
+        policy_engine=policy_engine, policy_rule_id=policy_rule_id,
+    )
     answer = nl_agent.final_answer(result)
     print(answer)
     return answer
@@ -91,9 +97,17 @@ async def main() -> None:
                 report["tx_hash"] = res.tx_hash
                 report["tx_explorer"] = explorer_url(chain_id, res.tx_hash)
 
-        # ---- 2) 自然语言 Agent 演示 ----
-        answer = await run_demo_instruction(kh, args.instruction)
+        # ---- 2) 自然语言 Agent 演示（强制接入风控：Agent 只能付给白名单地址、限额内金额）----
+        policy_engine = PolicyEngine()
+        demo_rule = make_demo_rule(recipient, amount, name="demo-agent-rule")
+        demo_rule_id = policy_engine.add_rule(demo_rule)
+        print(
+            f"\n[风控] Agent 路径已接入: 白名单={demo_rule.whitelist or '空(不放行)'} "
+            f"单笔限额={demo_rule.single_limit_wei / 1e18} ETH"
+        )
+        answer = await run_demo_instruction(kh, args.instruction, policy_engine, demo_rule_id)
         report["agent_answer"] = answer
+        policy_engine.close()
 
     # 落盘
     out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples", "output")

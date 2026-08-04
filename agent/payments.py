@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from dataclasses import dataclass, field, asdict
@@ -48,6 +49,42 @@ class PaymentResult:
 # ----------------------------------------------------------------------
 # 工具函数
 # ----------------------------------------------------------------------
+# 默认允许的链（Chain ID 白名单，防止请求方/LLM 把交易指到任意网络）
+# 可用 PAYKEEPER_ALLOWED_CHAIN_IDS 覆盖（逗号分隔），默认仅测试网：
+#   Sepolia=11155111, Base Sepolia=84532
+DEFAULT_ALLOWED_CHAIN_IDS = {"11155111", "84532"}
+
+
+def allowed_chain_ids() -> set[str]:
+    raw = os.getenv("PAYKEEPER_ALLOWED_CHAIN_IDS", "")
+    if raw.strip():
+        return {c.strip() for c in raw.split(",") if c.strip()}
+    return set(DEFAULT_ALLOWED_CHAIN_IDS)
+
+
+def _amount_to_wei(amount: str, token_address: str | None) -> tuple[int | None, str]:
+    """把金额转成 wei 用于风控校验。
+
+    语义约定：原生币 amount 单位为 ETH（转 wei 乘 1e18）；
+    ERC-20 amount 直接以最小精度单位（wei）传入，不做换算。
+    解析失败返回 (None, 错误信息)，由调用方 fail-closed（拒绝），绝不置 0 放行。
+    """
+    try:
+        if token_address:
+            value = int(str(amount).strip())
+        else:
+            # 用 Decimal 避免 float 精度丢失；非法/负数/NaN 一律拒绝
+            from decimal import Decimal, InvalidOperation
+
+            d = Decimal(str(amount).strip())
+            if not d.is_finite() or d < 0:
+                return None, f"金额非法（非有限或为负）: {amount!r}"
+            value = int(d * Decimal(10) ** 18)
+        if value < 0:
+            return None, f"金额非法（为负）: {amount!r}"
+        return value, ""
+    except (ValueError, TypeError, InvalidOperation, ArithmeticError):
+        return None, f"金额解析失败: {amount!r}"
 def _flatten(obj: Any) -> dict:
     """把 MCP 文本结果拍平成 dict。
 
@@ -125,15 +162,29 @@ async def execute_transfer(
     timeout: int = 120,
     policy_engine: Any = None,
     policy_rule_id: str = "",
+    idempotency_key: str | None = None,
 ) -> PaymentResult:
     """经 KeeperHub 执行一笔链上转账（原生币或 ERC-20）。
 
     流程：风控校验（可选）-> 模拟预飞 -> 幂等广播 -> 轮询状态。
     policy_engine / policy_rule_id 提供时，执行前强制风控校验
     （地址格式 / 白名单 / 单笔限额 / 每日累计限额），不通过直接拒绝。
+    idempotency_key 提供时使用它（订阅等场景用确定性 key 防跨重启/并发双付），
+    否则内部生成一次并在所有重试中复用。
     返回 PaymentResult（含 execution_id / tx_hash / 审计轨迹）。
     """
     trail: list[dict] = []
+
+    # 0) 链白名单（fail-closed：不在允许列表直接拒绝，防止把交易指到主网等任意网络）
+    if str(chain_id) not in allowed_chain_ids():
+        return PaymentResult(
+            ok=False, kind="transfer", chain_id=str(chain_id),
+            to_address=to_address, amount=str(amount), token=token_address or "",
+            attempts=1,
+            error=f"链不在允许名单: chain_id={chain_id}（允许 {sorted(allowed_chain_ids())}）",
+            audit_trail=trail,
+        )
+
     base_args: dict[str, Any] = {
         "chain_id": str(chain_id),
         "to_address": to_address,
@@ -142,15 +193,17 @@ async def execute_transfer(
     if token_address:
         base_args["token_address"] = token_address
 
-    # 0) 风控校验（可选，自主支付场景建议开启）
+    # 0.5) 金额解析（fail-closed：解析失败直接拒绝，绝不置 0 放行）
+    amount_wei, parse_err = _amount_to_wei(str(amount), token_address)
+    if parse_err:
+        return PaymentResult(
+            ok=False, kind="transfer", chain_id=str(chain_id),
+            to_address=to_address, amount=str(amount), token=token_address or "",
+            attempts=1, error=f"风控拦截: {parse_err}", audit_trail=trail,
+        )
+
+    # 1) 风控校验（可选，自主支付场景建议开启）
     if policy_engine is not None:
-        try:
-            if token_address:
-                amount_wei = int(str(amount))
-            else:
-                amount_wei = int(float(str(amount)) * 10**18)
-        except Exception:
-            amount_wei = 0
         verdict = policy_engine.check(policy_rule_id, to_address, amount_wei)
         trail.append({"step": "policy", "result": str(verdict), "ts": _now()})
         if not verdict.ok:
@@ -183,7 +236,8 @@ async def execute_transfer(
     # 2) 幂等广播 + 重试
     # 幂等键在整个执行逻辑（含所有重试）只生成一次：
     # 若第一笔已上链但响应超时，重试必须携带同一 key，让 KeeperHub 去重，避免双付。
-    idempotency_key = uuid.uuid4().hex
+    # 外部可传入确定性 key（订阅按「订阅ID+周期」派生），跨重启/并发也不会双付。
+    idempotency_key = idempotency_key or uuid.uuid4().hex
     last_err = ""
     for attempt in range(1, max_retries + 1):
         args = {**base_args, "idempotency_key": idempotency_key}
@@ -207,11 +261,6 @@ async def execute_transfer(
                 # 风控记账：成功执行计入当日累计（用于每日限额）
                 if policy_engine is not None:
                     try:
-                        amount_wei = (
-                            int(str(amount))
-                            if token_address
-                            else int(float(str(amount)) * 10**18)
-                        )
                         policy_engine.record_success(
                             policy_rule_id, to_address, amount_wei, tx_hash
                         )

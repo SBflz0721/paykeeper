@@ -183,22 +183,23 @@
  <!-- ============ KeeperHub 配置 ============ -->
  <section id="tab-keeperhub" style="display:none">
  <div class="panel">
- <h2>KeeperHub 连接配置 <small>前端可视化配置，运行时注入环境变量，不写 .env</small></h2>
+ <h2>KeeperHub 连接配置 <small>API Key 在 .env 配置；Wallet ID 可前端配置（请求时生效）</small></h2>
  <div class="row">
  <div>
- <label>KeeperHub API Key（kh_ 前缀）</label>
- <input id="khKey" type="password" placeholder="kh_...">
+ <label>KeeperHub API Key（kh_ 前缀，只读）</label>
+ <input id="khKey" type="password" placeholder="kh_..." readonly>
+ <small style="color:var(--dim)">MCP 连接在启动时建立，请通过 .env 的 KEEPERHUB_API_KEY 配置，前端不保存。</small>
  </div>
  <div>
  <label>Wallet Integration ID</label>
  <input id="khWalletId" placeholder="在 KeeperHub 控制台 Wallet 页面查看">
  </div>
  </div>
- <button class="btn" onclick="saveKeeperHub()">保存配置</button>
+ <button class="btn" onclick="saveKeeperHub()">保存 Wallet ID</button>
  <div class="msg" id="khMsg"></div>
  <pre class="result" id="khCurrent" style="display:block"></pre>
  <div class="msg info" style="display:block;margin-top:10px" id="khWarning">
- 注意：KeeperHub MCP 连接在 Dashboard 启动时建立。若 API Key 变更，请重启 Dashboard 以使新 Key 生效。
+ 注意：KeeperHub MCP 连接在 Dashboard 启动时建立，KEEPERHUB_API_KEY 请在 .env 配置后重启生效；此处只管理 Wallet Integration ID（查询时即时生效）。
  </div>
  </div>
  </section>
@@ -213,6 +214,24 @@ function esc(s) {
  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+// ---- 鉴权包装：所有 fetch 自动带 Bearer token；401 时提示输入 ----
+const authToken = sessionStorage.getItem('pk_token') || '';
+window.fetch = (function (origFetch) {
+ return async function (url, opts) {
+  opts = opts || {};
+  const headers = new Headers(opts.headers || {});
+  if (authToken) headers.set('Authorization', 'Bearer ' + authToken);
+  if (opts.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const res = await origFetch(url, Object.assign({}, opts, {headers}));
+  if (res.status === 401) {
+   const t = prompt('Dashboard 需要鉴权，请输入 DASHBOARD_TOKEN（.env 中配置）：');
+   if (t) { sessionStorage.setItem('pk_token', t.trim()); location.reload(); }
+   throw new Error('未授权：请配置 DASHBOARD_TOKEN');
+  }
+  return res;
+ };
+})(window.fetch);
 
 // ---- Tab 切换 ----
 document.querySelectorAll('nav button').forEach(btn => {
@@ -463,31 +482,30 @@ async function loadKeeperHub() {
  try {
  const res = await fetch('/api/keeperhub-config');
  const data = await res.json();
- $('khKey').value = '';
+ $('khKey').value = data.api_key_masked || '';
  $('khWalletId').value = data.wallet_integration_id || '';
  $('khCurrent').textContent = JSON.stringify({
- api_key: data.api_key_masked || '(未设置)',
+ api_key: data.api_key_masked || '(未设置，见 .env)',
  wallet_integration_id: data.wallet_integration_id || '(未设置)',
  has_key: data.has_key,
  has_wallet_id: data.has_wallet_id,
  }, null, 2);
- $('khWarning').style.display = data.needs_restart ? '' : 'none';
+ $('khWarning').style.display = 'block';
  hideMsg($('khMsg'));
  } catch (e) { showMsg($('khMsg'), 'err', '加载失败: ' + e.message); }
 }
 
 async function saveKeeperHub() {
- const api_key = $('khKey').value.trim();
  const wallet_id = $('khWalletId').value.trim();
- if (!api_key && !wallet_id) return showMsg($('khMsg'), 'err', '至少填写一项');
+ if (!wallet_id) return showMsg($('khMsg'), 'err', '请填写 Wallet Integration ID');
  try {
  const res = await fetch('/api/keeperhub-config', {
  method: 'POST', headers: {'Content-Type':'application/json'},
- body: JSON.stringify({api_key, wallet_integration_id: wallet_id}),
+ body: JSON.stringify({wallet_integration_id: wallet_id}),
  });
  const data = await res.json();
  if (!res.ok) throw new Error(data.detail || '保存失败');
- showMsg($('khMsg'), 'ok', '已保存。' + (data.warning || ''));
+ showMsg($('khMsg'), 'ok', '已保存 Wallet ID。' + (data.note || ''));
  loadKeeperHub();
  } catch (e) { showMsg($('khMsg'), 'err', e.message); }
 }

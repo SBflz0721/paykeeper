@@ -22,6 +22,7 @@ load_dotenv()
 
 from agent.keeperhub_mcp import KeeperHubMCP
 from agent import agent as nl_agent
+from agent.policy import PolicyEngine, make_demo_rule
 
 EXPLORERS = {
     "1": "https://etherscan.io/tx/{}",
@@ -66,9 +67,20 @@ async def main() -> None:
         print(f"  > {args.instruction}")
 
         banner("Agent 推理与执行中（DeepSeek + KeeperHub MCP）...")
-        result = await nl_agent.run_instruction(kh, args.instruction)
+        # 强制接入风控：Agent 只能付给白名单地址（默认 demo 收款方）且金额受限
+        policy_engine = PolicyEngine()
+        demo_rule = make_demo_rule(
+            "0xc4Ef9855219C03843dd425b23C142d0F059aAfFd", 0.01, daily_eth=0.02,
+            name="video-demo-agent-rule",
+        )
+        demo_rule_id = policy_engine.add_rule(demo_rule)
+        result = await nl_agent.run_instruction(
+            kh, args.instruction,
+            policy_engine=policy_engine, policy_rule_id=demo_rule_id,
+        )
         answer = nl_agent.final_answer(result)
         print(answer)
+        policy_engine.close()
 
         hashes = extract_hashes(answer)
         for h in hashes:

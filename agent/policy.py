@@ -105,12 +105,17 @@ class PolicyEngine:
     # 规则管理
     # ------------------------------------------------------------------
     def add_rule(self, rule: PolicyRule) -> str:
+        # 白名单严格校验：任一非法地址直接拒绝，绝不静默删除
+        # （静默删除会把「受限」规则悄悄变成「不限」，是安全回归）
+        for addr in rule.whitelist:
+            if not ADDRESS_RE.match(addr):
+                raise ValueError(f"白名单地址非法（需 0x+40 位 hex）: {addr!r}")
         self._db.execute(
             "INSERT INTO rules (id, name, whitelist, single_limit_wei, daily_limit_wei,"
             " cron, enabled, created_at) VALUES (?,?,?,?,?,?,?,?)",
             (
                 rule.id, rule.name,
-                json.dumps([a for a in rule.whitelist if ADDRESS_RE.match(a)]),
+                json.dumps(rule.whitelist),
                 rule.single_limit_wei, rule.daily_limit_wei, rule.cron,
                 1 if rule.enabled else 0, rule.created_at,
             ),
@@ -239,3 +244,30 @@ class PolicyEngine:
 
     def close(self) -> None:
         self._db.close()
+
+
+def make_demo_rule(
+    recipient: str,
+    amount_eth: float | str,
+    daily_eth: float | str | None = None,
+    name: str = "demo-rule",
+) -> PolicyRule:
+    """构建一个演示用风控规则：白名单仅允许 demo 收款地址，限额 = 演示金额。
+
+    用于给「自然语言 Agent」演示路径接上风控（否则 Agent 可被提示词注入任意转账）。
+    金额用 Decimal 转换，避免 float 精度误差。
+    """
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        single = int(Decimal(str(amount_eth)) * Decimal(10) ** 18)
+        daily = int(Decimal(str(daily_eth if daily_eth is not None else float(amount_eth) * 2)) * Decimal(10) ** 18)
+    except (InvalidOperation, ValueError, TypeError) as e:
+        raise ValueError(f"演示金额非法: {amount_eth!r} / {daily_eth!r}") from e
+    whitelist = [recipient] if ADDRESS_RE.match(recipient) else []
+    return PolicyRule(
+        name=name,
+        whitelist=whitelist,
+        single_limit_wei=single,
+        daily_limit_wei=daily,
+    )

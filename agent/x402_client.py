@@ -21,6 +21,11 @@ import requests
 
 USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"  # Base 主网 USDC
 USDC_BASE_SEPOLIA = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"  # Base Sepolia USDC（示例）
+# 允许结算的资产白名单（默认仅上述 USDC 地址；可用 X402_ASSET_ALLOWLIST 追加，逗号分隔）
+DEFAULT_ASSET_ALLOWLIST = {USDC_BASE.lower(), USDC_BASE_SEPOLIA.lower()}
+# 单笔 x402 支付上限（wei / 最小精度）。默认 100 USDC（1e8 对 6 位小数 = 100 * 1e6）。
+# 可用 X402_MAX_AMOUNT_WEI 覆盖；超过上限的 challenge 一律拒绝，绝不「全额信任」。
+DEFAULT_MAX_AMOUNT_WEI = 100 * 10**6
 EIP3009_TYPE = {
     "TransferWithAuthorization": [
         {"name": "from", "type": "address"},
@@ -31,6 +36,19 @@ EIP3009_TYPE = {
         {"name": "nonce", "type": "bytes32"},
     ]
 }
+
+
+def _max_amount_wei() -> int:
+    try:
+        return int(os.getenv("X402_MAX_AMOUNT_WEI", str(DEFAULT_MAX_AMOUNT_WEI)))
+    except ValueError:
+        return DEFAULT_MAX_AMOUNT_WEI
+
+
+def _asset_allowed(asset: str) -> bool:
+    allowlist = {a.strip().lower() for a in os.getenv("X402_ASSET_ALLOWLIST", "").split(",") if a.strip()}
+    allowlist |= DEFAULT_ASSET_ALLOWLIST
+    return asset.lower() in allowlist
 
 
 def _private_key() -> str:
@@ -129,13 +147,18 @@ def _facilitator_allowed(url: str) -> bool:
 def settle(challenge: dict) -> dict:
     """向 facilitator 结算 x402 付款，返回 {ok, ...}。
 
-    安全要点：
+    安全要点（fail-closed，绝不「全额信任 challenge」）：
     - facilitator 必须 https 且在允许名单内（见 _facilitator_allowed）。
     - amount 直接采用 challenge 的 maxAmountRequired（最小精度，如 Base USDC 的 1e6 = 1 USDC），
       不做换算，避免单位错误多付/少付。
+    - 单笔金额上限 X402_MAX_AMOUNT_WEI（默认 100 USDC）：challenge 金额超上限直接拒绝，
+      防止被恶意/被劫持的工作流诱导签署大额转账。
+    - asset 必须在允许名单（默认 Base/USDC 主网与 Sepolia），防止被诱导签非预期资产。
     """
     try:
         asset = challenge.get("asset", USDC_BASE)
+        if not _asset_allowed(asset):
+            return {"ok": False, "error": f"asset 不在允许名单，已拒绝: {asset}"}
         # 链推导（Base 主网=8453 / Base Sepolia=84532）
         network = str(challenge.get("network", "")).lower()
         chain_id = 84532 if "sepolia" in network else 8453
@@ -146,6 +169,13 @@ def settle(challenge: dict) -> dict:
             amount = 0
         if amount <= 0:
             return {"ok": False, "error": "challenge 缺少有效的 maxAmountRequired"}
+        cap = _max_amount_wei()
+        if amount > cap:
+            return {
+                "ok": False,
+                "error": f"challenge 金额 {amount} 超过单笔上限 {cap}"
+                f"（X402_MAX_AMOUNT_WEI），已拒绝以防范恶意大额",
+            }
 
         to_addr = challenge.get("payTo", "")
         if not to_addr:

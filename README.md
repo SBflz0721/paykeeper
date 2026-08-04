@@ -157,9 +157,16 @@ python examples/workflow_demo.py       # 工作流创建 -> 执行 -> 轮询
 `web/` 提供浏览器界面（FastAPI + 原生 HTML，零构建）：
 
 ```bash
-uvicorn web.app:app --host 0.0.0.0 --port 8000
-# 打开 http://localhost:8000
+# 安全启动：只绑本机回环 + 设置鉴权 token（防止同网段任何人建规则 / 转账）
+DASHBOARD_TOKEN=<你的随机 token> uvicorn web.app:app --host 127.0.0.1 --port 8000
+# 打开 http://127.0.0.1:8000（首次访问会要求输入 DASHBOARD_TOKEN，浏览器记住）
 ```
+
+> 安全说明：
+> - **务必绑 127.0.0.1 而非 0.0.0.0**：Dashboard 能建规则、触发真实链上转账，暴露到网段等于把钱包交给局域网。
+> - **设置 `DASHBOARD_TOKEN`**：所有 `/api/*`（除 `/health`）要求 `Authorization: Bearer <token>`；未设置则不启用鉴权（仅限本机使用）。
+> - **`chain_id` 白名单**：执行只允许 `PAYKEEPER_ALLOWED_CHAIN_IDS` 内的链（默认仅 Sepolia 11155111 / Base Sepolia 84532），请求方传主网会直接拒绝。
+> - **custom provider 需白名单**：`/api/provider` 的自定义 base_url 必须命中 `OPENAI_COMPATIBLE_BASE_URL_ALLOWLIST`，防止 LLM key 被转发到攻击者服务器。
 
 | 标签页 | 功能 |
 |--------|------|

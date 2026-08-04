@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -117,6 +118,9 @@ class SubscriptionConfig:
     chain_id: str = "11155111"
     token_address: str | None = None
     name: str = ""
+    # 风控（可选但强烈建议）：到点自动执行前强制校验
+    policy_engine: Any = None
+    policy_rule_id: str = ""
 
     def __post_init__(self) -> None:
         self.id: str = self.name or f"sub-{uuid.uuid4().hex[:10]}"
@@ -135,14 +139,55 @@ class SubscriptionRun:
 # 订阅管理器
 # ----------------------------------------------------------------------
 class SubscriptionManager:
-    """管理多个订阅：每个订阅一个 asyncio 任务，到点自动执行。"""
+    """管理多个订阅：每个订阅一个 asyncio 任务，到点自动执行。
 
-    def __init__(self, kh: KeeperHubMCP, check_interval: float = 15.0):
+    防重复付款设计：
+    - 每个周期派生确定性幂等键 `paykeeper-sub:{sub_id}:{周期}`，
+      即使两个实例/进程同时触发同一周期，KeeperHub 也会按 key 去重；
+    - 上次运行时间持久化到 state 文件，重启后以「上次运行」为锚点计算下次触发，
+      不会把已经付过的周期再付一次。
+    """
+
+    def __init__(self, kh: KeeperHubMCP, check_interval: float = 15.0,
+                 state_file: str | None = None):
         self.kh = kh
         self.check_interval = check_interval
+        if state_file is None:
+            state_file = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "data", "subscriptions.json",
+            )
+        self.state_file = state_file
         self._subs: dict[str, SubscriptionConfig] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self.history: list[SubscriptionRun] = []
+        self._state: dict[str, dict] = self._load_state()
+
+    # -- 状态持久化（防跨重启重复付同一周期）----------------------------------
+    def _load_state(self) -> dict[str, dict]:
+        try:
+            if os.path.exists(self.state_file):
+                with open(self.state_file, encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data if isinstance(data, dict) else {}
+        except Exception:
+            pass
+        return {}
+
+    def _save_state(self) -> None:
+        try:
+            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+            with open(self.state_file, "w", encoding="utf-8") as f:
+                json.dump(self._state, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass  # 状态写失败不致命（幂等键仍防双付，只是重启后可能重算锚点）
+
+    def _last_run(self, sub_id: str) -> str:
+        return str(self._state.get(sub_id, {}).get("last_run", ""))
+
+    def _period_key(self, sub_id: str, due_at: datetime) -> str:
+        # 确定性幂等键：同一订阅同一周期永远同 key，跨实例/跨重启去重
+        return f"paykeeper-sub:{sub_id}:{due_at.isoformat()}"
 
     # -- 管理 ----------------------------------------------------------
     def add(self, cfg: SubscriptionConfig) -> str:
@@ -160,7 +205,7 @@ class SubscriptionManager:
             {
                 "id": cfg.id, "to": cfg.to_address, "amount": cfg.amount,
                 "cron": cfg.cron, "chain_id": cfg.chain_id,
-                "next": self.next_run(cfg.id),
+                "next": self.next_run(cfg.id), "last_run": self._last_run(cfg.id),
             }
             for cfg in self._subs.values()
         ]
@@ -169,23 +214,41 @@ class SubscriptionManager:
         cfg = self._subs.get(sub_id)
         if not cfg:
             return ""
-        return cfg.cron_obj.next().isoformat()
+        anchor = self._last_run(sub_id)
+        after = None
+        if anchor:
+            try:
+                after = datetime.fromisoformat(anchor)
+            except Exception:
+                after = None
+        return cfg.cron_obj.next(after=after).isoformat()
 
     # -- 执行 ----------------------------------------------------------
-    async def run_once(self, sub_id: str) -> PaymentResult:
-        """立即执行一次订阅付款（手动触发 / 演示 / 补跑）。"""
+    async def run_once(self, sub_id: str, due_at: datetime | None = None) -> PaymentResult:
+        """立即执行一次订阅付款（手动触发 / 演示 / 补跑）。
+
+        due_at 指定本周期归属（调度器传入计划触发时刻；手动触发默认当前时刻）。
+        同一 (sub_id, due_at) 会复用同一幂等键，跨重启/并发不重复付款。
+        """
         cfg = self._subs.get(sub_id)
         if not cfg:
             raise KeyError(f"未知订阅: {sub_id}")
+        due = (due_at or datetime.now(UTC)).astimezone(UTC)
         result = await execute_transfer(
             self.kh,
             chain_id=cfg.chain_id,
             to_address=cfg.to_address,
             amount=cfg.amount,
             token_address=cfg.token_address,
+            policy_engine=cfg.policy_engine,
+            policy_rule_id=cfg.policy_rule_id,
+            idempotency_key=self._period_key(sub_id, due),
         )
+        # 记录周期归属，作为下次调度的锚点
+        self._state[sub_id] = {"last_run": due.isoformat()}
+        self._save_state()
         self.history.append(
-            SubscriptionRun(sub_id=sub_id, due_at=datetime.now(UTC).isoformat(), result=result)
+            SubscriptionRun(sub_id=sub_id, due_at=due.isoformat(), result=result)
         )
         return result
 
@@ -193,14 +256,23 @@ class SubscriptionManager:
         cfg = self._subs.get(sub_id)
         if not cfg:
             return
+        # 锚点 = 上次运行周期；重启后从该周期之后继续，避免重复付同一期
+        anchor = None
+        last = self._last_run(sub_id)
+        if last:
+            try:
+                anchor = datetime.fromisoformat(last)
+            except Exception:
+                anchor = None
         while True:
             try:
-                nxt = cfg.cron_obj.next()
+                nxt = cfg.cron_obj.next(after=anchor or datetime.now(UTC))
                 while True:
                     await asyncio.sleep(min(self.check_interval, 5.0))
                     if datetime.now(UTC) >= nxt:
                         break
-                result = await self.run_once(sub_id)
+                result = await self.run_once(sub_id, due_at=nxt)
+                anchor = nxt
                 # 记录并输出；失败不打断调度（下一周期会再次尝试）
                 print(
                     f"[sub:{sub_id}] {datetime.now(UTC).isoformat()} "
