@@ -11,8 +11,8 @@
 
 | 类别 | 结果 |
 |------|------|
-| 真实交易验证 | [OK] 18 笔 Sepolia 交易经 KeeperHub 执行成功 |
-| 敏感信息泄露 | [!] 1 项（`kh_` Key 暴露于对话；已确保不进 git），**建议轮换** |
+| 真实交易验证 | 通过：18 笔 Sepolia 交易经 KeeperHub 执行成功 |
+| 敏感信息泄露 | 注意：1 项（`kh_` Key 暴露于对话；已确保不进 git），**建议轮换** |
 | 已修复 bug/漏洞 | 6 项（2 高、2 中、2 低） |
 | 待跟进事项 | 3 项（中/低/信息） |
 
@@ -55,17 +55,17 @@
 - **发现**：存在先乘 `10**decimals` 又被覆盖的死代码；若 `maxAmountRequired` 本就是最小精度，错误换算会导致多付/少付。
 - **修复**：删除死代码，直接采用 `maxAmountRequired`（最小精度），并校验 `amount>0`、`payTo` 非空。
 
-### [B-05] 重试重新生成幂等键 = 双付风险（高，资金安全）[!] 外部评审发现
+### [B-05] 重试重新生成幂等键 = 双付风险（高，资金安全）——外部评审发现
 - **位置**：`agent/payments.py` `execute_transfer`
 - **发现**：幂等键在**每次重试**都重新生成（原代码 `for attempt: args = {**base_args, "idempotency_key": uuid.uuid4().hex}`）。若第一笔已上链但响应超时，重试携带**新** key，KeeperHub 视为全新请求 -> 再次转账 = **双付**。评审结论："每次重试都重新生成幂等键，等于换张新单"。
 - **修复**：幂等键在整个执行逻辑（含所有重试）只生成一次，重试复用同一 key；KeeperHub 按 key 去重。
-- **验证**：mock「第一次广播超时、第二次成功」，断言两次广播 `idempotency_key` 相同 [OK]。
+- **验证**：mock「第一次广播超时、第二次成功」，断言两次广播 `idempotency_key` 相同（通过）。
 
-### [B-06] 订阅没有真定时器 = 一次性转账（中）[!] 外部评审发现
+### [B-06] 订阅没有真定时器 = 一次性转账（中）——外部评审发现
 - **位置**：`agent/payments.py` `run_subscription_once`、`examples/workflow_demo.py`
 - **发现**：原 `run_subscription_once` 只是立即执行一次转账（注释自己写明"循环调度见 README/工作流方案"）；`workflow_demo.py` 的 Schedule 触发器只配置了 cron 但**手动执行**，未证明到点自动触发。
 - **修复**：新增 `agent/subscription.py` —— 真正的本地 cron 调度器（`SubscriptionManager` + 最小 cron 解析器），到点自动调用 `execute_transfer`（复用可靠性层）。新增 `examples/subscription_demo.py`（run_once 立即执行 + `--wait` 等待定时触发）。
-- **验证**：cron 解析 9/9 用例通过（含周字段、闰年、`*/15`、周 0/7）；`subscription_demo.py` 实跑产生真实交易 `0x424af7e9…` [OK]。
+- **验证**：cron 解析 9/9 用例通过（含周字段、闰年、`*/15`、周 0/7）；`subscription_demo.py` 实跑产生真实交易 `0x424af7e9…`（通过）。
 
 ---
 
@@ -89,13 +89,13 @@
 
 | 项 | 结果 |
 |----|------|
-| `py_compile` 全部模块 | [OK] 通过 |
-| `_facilitator_allowed` 单测（5 用例） | [OK] 通过 |
-| cron 解析单测（9 用例） | [OK] 通过 |
-| 幂等键重试复用单测（mock 首播超时->重试） | [OK] 两次广播同 key |
-| 修复后 `transfer_demo.py` 实跑 | [OK] `ok=true, tx_hash=0x8bc5…, status=completed` |
-| `subscription_demo.py` 实跑 | [OK] 真实交易 `0x424af7e9…, status=completed` |
-| git 暂存核查 | [OK] `.env` 被忽略，24 个文件无敏感内容 |
+| `py_compile` 全部模块 | 通过 |
+| `_facilitator_allowed` 单测（5 用例） | 通过 |
+| cron 解析单测（9 用例） | 通过 |
+| 幂等键重试复用单测（mock 首播超时->重试） | 通过：两次广播同 key |
+| 修复后 `transfer_demo.py` 实跑 | 通过：`ok=true, tx_hash=0x8bc5…, status=completed` |
+| `subscription_demo.py` 实跑 | 通过：真实交易 `0x424af7e9…, status=completed` |
+| git 暂存核查 | 通过：`.env` 被忽略，24 个文件无敏感内容 |
 
 ## 5. 遗留风险
 
@@ -110,12 +110,12 @@
 
 | 检查项 | 结果 |
 |--------|------|
-| 命令执行投毒 | [OK] 仅 `scripts/auto_speed.py` 用 `subprocess.run` 调 ffmpeg（录屏后处理工具，参数固定），非自动投毒 |
-| 网络请求目标 | [OK] 全部为白名单域名（keeperhub.com / deepseek.com / groq / moonshot / bigmodel / etherscan / github / dorahacks）+ 占位符 |
-| 硬编码密钥 | [OK] 代码/文档无真实密钥（`grep sk-/kh_/ghp_/AKIA` 全项目 0 命中） |
-| Base64 载荷 | [OK] 仅 `x402_client.py` 的 USDC 合约地址，无编码载荷 |
-| 依赖供应链 | [OK] `mcp<2.0` + `httpx<0.28` 已锁上界；其余设下限，可接受 |
-| 前端 Provider 配置 | [INFO] `data/provider.json` 明文存 API Key（运行时配置，`data/` 已 gitignore，本地运行可接受；部署建议改 secret 存储） |
+| 命令执行投毒 | 通过：仅 `scripts/auto_speed.py` 用 `subprocess.run` 调 ffmpeg（录屏后处理工具，参数固定），非自动投毒 |
+| 网络请求目标 | 通过：全部为白名单域名（keeperhub.com / deepseek.com / groq / moonshot / bigmodel / etherscan / github / dorahacks）+ 占位符 |
+| 硬编码密钥 | 通过：代码/文档无真实密钥（`grep sk-/kh_/ghp_/AKIA` 全项目 0 命中） |
+| Base64 载荷 | 通过：仅 `x402_client.py` 的 USDC 合约地址，无编码载荷 |
+| 依赖供应链 | 通过：`mcp<2.0` + `httpx<0.28` 已锁上界；其余设下限，可接受 |
+| 前端 Provider 配置 | 说明：`data/provider.json` 明文存 API Key（运行时配置，`data/` 已 gitignore，本地运行可接受；部署建议改 secret 存储） |
 
 ### 6.2 发现并修复的 Bug
 
@@ -130,10 +130,10 @@
 
 | 端点 | 结果 |
 |------|------|
-| `GET /health` | [OK] `{"status":"ok","tools":35}` |
-| `GET /` | [OK] 首页含 6 个 Tab（执行/规则/记录/钱包/Provider/KeeperHub） |
-| `GET/POST /api/provider` | [OK] 前端可视化配置 provider，运行时生效，key 脱敏显示 |
-| `POST /api/rules` | [OK] 创建规则（白名单/单笔/每日限额） |
-| `POST /api/execute` | [OK] 风控拦截（白名单/限额）返回 `rejected` 并记录；合法请求真实上链（第 18 笔 `0x65203c…`，审计 policy->simulate->broadcast） |
-| `GET /api/executions` | [OK] 全审计记录（含 rejected 原因） |
-| `GET /api/wallet` | [OK] 返回 KeeperHub 托管钱包（需 `.env` 配 `WALLET_INTEGRATION_ID`） |
+| `GET /health` | 通过：`{"status":"ok","tools":35}` |
+| `GET /` | 通过：首页含 6 个 Tab（执行/规则/记录/钱包/Provider/KeeperHub） |
+| `GET/POST /api/provider` | 通过：前端可视化配置 provider，运行时生效，key 脱敏显示 |
+| `POST /api/rules` | 通过：创建规则（白名单/单笔/每日限额） |
+| `POST /api/execute` | 通过：风控拦截（白名单/限额）返回 `rejected` 并记录；合法请求真实上链（第 18 笔 `0x65203c…`，审计 policy->simulate->broadcast） |
+| `GET /api/executions` | 通过：全审计记录（含 rejected 原因） |
+| `GET /api/wallet` | 通过：返回 KeeperHub 托管钱包（需 `.env` 配 `WALLET_INTEGRATION_ID`） |

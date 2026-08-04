@@ -85,7 +85,7 @@
  <button class="btn" onclick="interpret()">解析意图</button>
  <div class="msg" id="nlMsg"></div>
  <pre class="result" id="nlResult"></pre>
- <button class="btn green" id="nlCreateBtn" style="display:none" onclick="createFromIntent()">[OK] 确认创建规则</button>
+ <button class="btn green" id="nlCreateBtn" style="display:none" onclick="createFromIntent()">确认创建规则</button>
  </div>
 
  <div class="panel">
@@ -198,7 +198,7 @@
  <div class="msg" id="khMsg"></div>
  <pre class="result" id="khCurrent" style="display:block"></pre>
  <div class="msg info" style="display:block;margin-top:10px" id="khWarning">
- [!] KeeperHub MCP 连接在 Dashboard 启动时建立。若 API Key 变更，请重启 Dashboard 以使新 Key 生效。
+ 注意：KeeperHub MCP 连接在 Dashboard 启动时建立。若 API Key 变更，请重启 Dashboard 以使新 Key 生效。
  </div>
  </div>
  </section>
@@ -206,6 +206,13 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+
+// HTML 转义：防止规则名/地址/错误信息中的引号或尖括号破坏 DOM
+function esc(s) {
+ return String(s == null ? '' : s)
+ .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+ .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 // ---- Tab 切换 ----
 document.querySelectorAll('nav button').forEach(btn => {
@@ -300,9 +307,9 @@ async function doExecute() {
  $('execResult').textContent = JSON.stringify(data, null, 2);
  $('execResult').style.display = 'block';
  if (data.ok && data.tx_hash) {
- showMsg($('execMsg'), 'ok', '[OK] 交易成功: ' + data.tx_hash);
+ showMsg($('execMsg'), 'ok', '交易成功: ' + data.tx_hash);
  } else {
- showMsg($('execMsg'), 'err', '[X] ' + (data.error || '执行失败'));
+ showMsg($('execMsg'), 'err', data.error || '执行失败');
  }
  } catch (e) { showMsg($('execMsg'), 'err', e.message); }
 }
@@ -318,14 +325,14 @@ async function loadRules() {
  }
  body.innerHTML = rules.map(r => `
  <tr>
- <td><b>${r.name}</b><br><span class="tag dim">${r.id}</span></td>
- <td class="mono">${r.whitelist.length ? r.whitelist.join('<br>') : '<span class="tag blue">不限</span>'}</td>
+ <td><b>${esc(r.name)}</b><br><span class="tag dim">${esc(r.id)}</span></td>
+ <td class="mono">${r.whitelist.length ? r.whitelist.map(esc).join('<br>') : '<span class="tag blue">不限</span>'}</td>
  <td>${(r.single_limit_wei/1e18).toFixed(4)} / ${(r.daily_limit_wei/1e18).toFixed(4)} ETH</td>
- <td class="mono">${r.cron || '—'}</td>
+ <td class="mono">${esc(r.cron || '—')}</td>
  <td>${r.enabled ? '<span class="tag green">启用</span>' : '<span class="tag red">禁用</span>'}</td>
  <td>
- <button class="mini" onclick="toggleRule('${r.id}', ${!r.enabled})">${r.enabled ? '禁用' : '启用'}</button>
- <button class="mini red" onclick="deleteRule('${r.id}')">删除</button>
+ <button class="mini" onclick="toggleRule('${esc(r.id)}', ${!r.enabled})">${r.enabled ? '禁用' : '启用'}</button>
+ <button class="mini red" onclick="deleteRule('${esc(r.id)}')">删除</button>
  </td>
  </tr>`).join('');
  } catch (e) {}
@@ -345,7 +352,7 @@ async function createRule() {
  });
  const data = await res.json();
  if (!res.ok) throw new Error(data.detail || '创建失败');
- showMsg($('ruleMsg'), 'ok', '[OK] 规则已创建: ' + data.name);
+ showMsg($('ruleMsg'), 'ok', '规则已创建: ' + data.name);
  $('rName').value=''; $('rWhitelist').value='';
  loadRules(); loadRuleOptions();
  } catch (e) { showMsg($('ruleMsg'), 'err', e.message); }
@@ -374,17 +381,17 @@ async function loadLogs() {
  body.innerHTML = logs.map(l => `
  <tr>
  <td>${l.id}</td>
- <td class="mono">${l.rule_id || '—'}</td>
- <td class="mono">${l.to_address}</td>
- <td class="mono">${l.amount_wei}</td>
+ <td class="mono">${esc(l.rule_id || '—')}</td>
+ <td class="mono">${esc(l.to_address)}</td>
+ <td class="mono">${esc(l.amount_wei)}</td>
  <td>
  ${l.status === 'success' ? '<span class="tag green">成功</span>'
  : l.status === 'rejected' ? '<span class="tag yellow">风控拒绝</span>'
  : l.status === 'failed' ? '<span class="tag red">失败</span>'
- : '<span class="tag dim">' + l.status + '</span>'}
+ : '<span class="tag dim">' + esc(l.status) + '</span>'}
  </td>
- <td class="mono">${l.tx_hash ? '<a href="https://sepolia.etherscan.io/tx/' + l.tx_hash + '" target="_blank">' + l.tx_hash.slice(0,18) + '…</a>' : '—'}</td>
- <td class="mono">${(l.error || '').slice(0, 60)}</td>
+ <td class="mono">${l.tx_hash ? '<a href="https://sepolia.etherscan.io/tx/' + esc(l.tx_hash) + '" target="_blank">' + esc(l.tx_hash).slice(0,18) + '…</a>' : '—'}</td>
+ <td class="mono">${esc(l.error || '').slice(0, 60)}</td>
  </tr>`).join('');
  } catch (e) {}
 }
@@ -480,7 +487,7 @@ async function saveKeeperHub() {
  });
  const data = await res.json();
  if (!res.ok) throw new Error(data.detail || '保存失败');
- showMsg($('khMsg'), 'ok', '[OK] 已保存。' + (data.warning || ''));
+ showMsg($('khMsg'), 'ok', '已保存。' + (data.warning || ''));
  loadKeeperHub();
  } catch (e) { showMsg($('khMsg'), 'err', e.message); }
 }

@@ -68,6 +68,20 @@ def _load_provider_config() -> dict:
         return {}
 
 
+# provider -> API key 环境变量名（模块级，供配置读写复用）
+PROVIDER_KEY_MAP = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "moonshot": "MOONSHOT_API_KEY",
+    "zhipu": "ZHIPU_API_KEY",
+    "ollama": "OLLAMA_API_KEY",
+    "custom": "OPENAI_COMPATIBLE_API_KEY",
+}
+
+
 def _apply_provider_config(cfg: dict) -> None:
     """把 provider 配置写入进程环境变量（运行时生效，不修改 .env）。"""
     provider = str(cfg.get("provider", "")).strip().lower()
@@ -80,20 +94,8 @@ def _apply_provider_config(cfg: dict) -> None:
     if model:
         os.environ["LLM_MODEL"] = model
 
-    # provider -> API key 环境变量名
-    KEY_MAP = {
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "deepseek": "DEEPSEEK_API_KEY",
-        "openrouter": "OPENROUTER_API_KEY",
-        "groq": "GROQ_API_KEY",
-        "moonshot": "MOONSHOT_API_KEY",
-        "zhipu": "ZHIPU_API_KEY",
-        "ollama": "OLLAMA_API_KEY",
-        "custom": "OPENAI_COMPATIBLE_API_KEY",
-    }
-    if provider in KEY_MAP and api_key:
-        os.environ[KEY_MAP[provider]] = api_key
+    if provider in PROVIDER_KEY_MAP and api_key:
+        os.environ[PROVIDER_KEY_MAP[provider]] = api_key
     if provider == "custom" and base_url:
         os.environ["OPENAI_COMPATIBLE_BASE_URL"] = base_url
 
@@ -311,22 +313,15 @@ async def provider_options() -> list[dict]:
 async def get_provider() -> dict:
     cfg = _load_provider_config()
     # 当前生效配置（脱敏显示 key）
-    key_map = {
-        "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY",
-        "deepseek": "DEEPSEEK_API_KEY", "openrouter": "OPENROUTER_API_KEY",
-        "groq": "GROQ_API_KEY", "moonshot": "MOONSHOT_API_KEY",
-        "zhipu": "ZHIPU_API_KEY", "ollama": "OLLAMA_API_KEY",
-        "custom": "OPENAI_COMPATIBLE_API_KEY",
-    }
     provider = cfg.get("provider") or os.getenv("LLM_PROVIDER", "anthropic")
-    key_env = key_map.get(provider, "")
+    key_env = PROVIDER_KEY_MAP.get(provider, "")
     has_key = bool(os.getenv(key_env)) if key_env else False
     return {
         "provider": provider,
         "model": cfg.get("model") or os.getenv("LLM_MODEL", ""),
         "base_url": cfg.get("base_url") or os.getenv("OPENAI_COMPATIBLE_BASE_URL", ""),
         "has_key": has_key,
-        "key_masked": _mask_key(cfg.get("api_key", "")),
+        "key_masked": _mask_key(cfg.get("api_key", "") or os.getenv(key_env, "")),
     }
 
 
@@ -335,19 +330,28 @@ async def set_provider(body: ProviderIn) -> dict:
     provider = body.provider.strip().lower()
     if provider not in {p["id"] for p in PROVIDER_OPTIONS}:
         raise HTTPException(422, f"未知 provider: {provider}")
-    # 校验：除 ollama 外必须填 key
-    if provider != "ollama" and not body.api_key.strip():
-        raise HTTPException(422, f"{provider} 需要 API Key")
     if not body.model.strip():
         raise HTTPException(422, "请填写模型名（代码不预设默认模型）")
     if provider == "custom" and not body.base_url.strip():
         raise HTTPException(422, "custom 需要 base_url")
 
+    # 校验：除 ollama 外必须填 key；为空时保留已配置的 key
+    # （前端只改模型/地址时无需重输 API Key）
+    api_key = body.api_key.strip()
+    if provider != "ollama" and not api_key:
+        existing = _load_provider_config()
+        if existing.get("provider") == provider:
+            api_key = str(existing.get("api_key", "")).strip()
+        if not api_key:
+            api_key = os.getenv(PROVIDER_KEY_MAP.get(provider, ""), "").strip()
+        if not api_key:
+            raise HTTPException(422, f"{provider} 需要 API Key（或先填入一次）")
+
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     PROVIDER_CONFIG_FILE.write_text(
         json.dumps({
             "provider": provider,
-            "api_key": body.api_key.strip(),
+            "api_key": api_key,
             "model": body.model.strip(),
             "base_url": body.base_url.strip(),
         }, ensure_ascii=False, indent=2),
@@ -413,6 +417,13 @@ async def get_keeperhub_config() -> dict:
 async def set_keeperhub_config(body: KeeperHubConfigIn) -> dict:
     api_key = body.api_key.strip()
     wallet_id = body.wallet_integration_id.strip()
+
+    # 为空时保留已保存/已生效的值（前端只改一项时不会丢另一项）
+    existing = _load_keeperhub_config()
+    if not api_key:
+        api_key = str(existing.get("api_key", "")).strip() or os.getenv("KEEPERHUB_API_KEY", "").strip()
+    if not wallet_id:
+        wallet_id = str(existing.get("wallet_integration_id", "")).strip() or os.getenv("WALLET_INTEGRATION_ID", "").strip()
 
     if not api_key and not wallet_id:
         raise HTTPException(422, "至少需要填写 API Key 或 Wallet Integration ID 之一")

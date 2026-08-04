@@ -180,10 +180,10 @@ uvicorn web.app:app --host 0.0.0.0 --port 8000
 |---|------|---------|---------|---------|
 | 1 | `execute_transfer` | [`0x8bc569…1baa`](https://sepolia.etherscan.io/tx/0x8bc5693d4ca307cad4ef5e069124e1ed25eb62b2086dcda29e9c8e8481631baa) | — | — |
 | 2 | `execute_transfer` | [`0xe3dff8…1f7e`](https://sepolia.etherscan.io/tx/0xe3dff8ed1870976a54a02cc82d3093ce47f11cde8dfd031d0b448a7671ab1f7e) | — | `tibsnk9bcntdogef6nii4` |
-| 3 | `workflow`（订阅） | [`0x5b0fd6…5bf7`](https://sepolia.etherscan.io/tx/0x5b0fd6bf8428c911d1f5882b8ac83604ee228c3c4173bcf17cd2bcacd5e25bf7) | [OK] sponsored | `ejwpzvyanilj5hkeqg1wp` |
-| 4 | `execute_transfer`（NL Agent） | [`0xf98cd5…6582`](https://sepolia.etherscan.io/tx/0xf98cd5a476fd61e12af321a72b876f607d7ce8035f5298cd735e2b4d7c666582) | [OK] sponsored | `6lagptosr08ei7e6mtipo` |
+| 3 | `workflow`（订阅） | [`0x5b0fd6…5bf7`](https://sepolia.etherscan.io/tx/0x5b0fd6bf8428c911d1f5882b8ac83604ee228c3c4173bcf17cd2bcacd5e25bf7) | sponsored | `ejwpzvyanilj5hkeqg1wp` |
+| 4 | `execute_transfer`（NL Agent） | [`0xf98cd5…6582`](https://sepolia.etherscan.io/tx/0xf98cd5a476fd61e12af321a72b876f607d7ce8035f5298cd735e2b4d7c666582) | sponsored | `6lagptosr08ei7e6mtipo` |
 | 5 | `execute_transfer` | [`0x53399d…5eab`](https://sepolia.etherscan.io/tx/0x53399d71ff2b3151753261a5915259975276148ee68fa8771bc06d81a1b45eab) | — | — |
-| 6 | `execute_transfer` | [`0x610036…c121`](https://sepolia.etherscan.io/tx/0x6100369c0f9eadd208bc281ea64ef2b9e69489531a29ecfdaf17b239a7bbc121) | [OK] sponsored | — |
+| 6 | `execute_transfer` | [`0x610036…c121`](https://sepolia.etherscan.io/tx/0x6100369c0f9eadd208bc281ea64ef2b9e69489531a29ecfdaf17b239a7bbc121) | sponsored | — |
 | 7 | `execute_transfer`（订阅调度器） | [`0x424af7…ca65`](https://sepolia.etherscan.io/tx/0x424af7e9bba7f1b32aa6395d70839c114184a755bf6593fde746672fa803ca65) | — | `iri3e6q76u1dhfqcdyfjm` |
 
 ---
@@ -238,12 +238,12 @@ uvicorn web.app:app --host 0.0.0.0 --port 8000
 
 完整报告见 [`AUDIT_REPORT.md`](AUDIT_REPORT.md)（6 项 bug 已修复，3 项 follow-up 保留）：
 
-- [OK] B-01：执行状态判定（pending 不再误判为 success）
-- [OK] B-02：simulate 结果校验（`wouldRevert` 检测）
-- [OK] B-03：x402 facilitator 域名白名单
-- [OK] B-04：x402 金额计算冗余清理
-- [OK] B-05：重试复用同一幂等键（防双付，外部评审发现）
-- [OK] B-06：真定时器订阅调度器（外部评审发现"订阅只是一次性转账"）
+- B-01：执行状态判定（pending 不再误判为 success）
+- B-02：simulate 结果校验（`wouldRevert` 检测）
+- B-03：x402 facilitator 域名白名单
+- B-04：x402 金额计算冗余清理
+- B-05：重试复用同一幂等键（防双付，外部评审发现）
+- B-06：真定时器订阅调度器（外部评审发现"订阅只是一次性转账"）
 
 ---
 
@@ -291,27 +291,27 @@ paykeeper/
 
 > **Execution is weighted heavily, because that is the point.**
 
-### 1. Does it execute onchain via KeeperHub? [OK]
+### 1. Does it execute onchain via KeeperHub?（通过）
 
 - **18 笔真实 Sepolia 交易**（上表 7 笔附 Etherscan 链接，每笔含 `transactionHash`、`executionId`、`gasUsed`、`sponsored`）
 - 不是 mockup：全部经 KeeperHub 真实广播，浏览器可验证
 
-### 2. Use of KeeperHub surfaces [OK]
+### 2. Use of KeeperHub surfaces（通过）
 
-- [OK] **MCP server**（35 个工具，`agent/keeperhub_mcp.py`）
-- [OK] **直接执行** `execute_transfer` / `execute_contract_call`
-- [OK] **x402 / MPP 按次付费**（EIP-3009 签名 + facilitator 白名单）
-- [OK] **Workflow builder**（创建 / 校验 / 执行 / 轮询，442 actions + 6 触发器）
-- [OK] **Audit trail**（每次执行回传 + 控制台可视化）
+- **MCP server**（35 个工具，`agent/keeperhub_mcp.py`）
+- **直接执行** `execute_transfer` / `execute_contract_call`
+- **x402 / MPP 按次付费**（EIP-3009 签名 + facilitator 白名单）
+- **Workflow builder**（创建 / 校验 / 执行 / 轮询，442 actions + 6 触发器）
+- **Audit trail**（每次执行回传 + 控制台可视化）
 
-### 3. Reliability and observability [OK]
+### 3. Reliability and observability（通过）
 
-- [OK] **失败模式处理**：`simulate` 预飞拒绝 `wouldRevert=true` 的交易
-- [OK] **重试机制**：指数退避（1.5s -> 3s -> 6s），重试**复用同一幂等键**（已 mock 单测验证，防"首笔已上链但响应超时 -> 重试双付"）
-- [OK] **Gas 处理**：`Gas Sponsorship`（`sponsored:true` 多笔验证）+ 非赞助场景的 gas 估算与回执
-- [OK] **审计使用**：每次执行回传 `audit_trail` 节点列表（simulate / broadcast / confirm）
+- **失败模式处理**：`simulate` 预飞拒绝 `wouldRevert=true` 的交易
+- **重试机制**：指数退避（1.5s -> 3s -> 6s），重试**复用同一幂等键**（已 mock 单测验证，防"首笔已上链但响应超时 -> 重试双付"）
+- **Gas 处理**：`Gas Sponsorship`（`sponsored:true` 多笔验证）+ 非赞助场景的 gas 估算与回执
+- **审计使用**：每次执行回传 `audit_trail` 节点列表（simulate / broadcast / confirm）
 
-### 4. Originality and real-world usefulness [OK]
+### 4. Originality and real-world usefulness（通过）
 
 PayKeeper 解决一个真实需求：**让任何能说自然语言的人都能发起可审计的链上付款**。
 
@@ -322,14 +322,14 @@ PayKeeper 解决一个真实需求：**让任何能说自然语言的人都能�
 
 适合场景：DAO 财库自动发薪、DeFi 自动化订阅（VPN/SaaS 代付）、AI Agent 之间 micropayment、电商自动结算。
 
-### 5. Integration quality and developer experience [OK]
+### 5. Integration quality and developer experience（通过）
 
-- [OK] **9 个 LLM provider** 一行切换（`agent/agent.py` 注册表设计，模型名用户自配）
-- [OK] **端到端文档**：`docs/TUTORIAL.md` 从零到第一次交易、`docs/DEMO_SCRIPT.md` 录屏指南
-- [OK] **演示脚本开箱即用**：`python examples/full_demo.py` 一行运行
-- [OK] **依赖锁定**：`mcp<2.0` + `httpx<0.28` 避免 API 兼容问题（requirements.txt）
-- [OK] **安全审计可见**：`AUDIT_REPORT.md` 列出 6 个已修 bug + 3 个 follow-up
-- [OK] **零外部数据库依赖**：纯 Python + MCP，不引入 DB / Redis
+- **9 个 LLM provider** 一行切换（`agent/agent.py` 注册表设计，模型名用户自配）
+- **端到端文档**：`docs/TUTORIAL.md` 从零到第一次交易、`docs/DEMO_SCRIPT.md` 录屏指南
+- **演示脚本开箱即用**：`python examples/full_demo.py` 一行运行
+- **依赖锁定**：`mcp<2.0` + `httpx<0.28` 避免 API 兼容问题（requirements.txt）
+- **安全审计可见**：`AUDIT_REPORT.md` 列出 6 个已修 bug + 3 个 follow-up
+- **零外部数据库依赖**：纯 Python + MCP，不引入 DB / Redis
 
 ---
 

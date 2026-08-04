@@ -180,10 +180,10 @@ uvicorn web.app:app --host 0.0.0.0 --port 8000
 |---|------|---------|----------------|---------------|
 | 1 | `execute_transfer` | [`0x8bc569…1baa`](https://sepolia.etherscan.io/tx/0x8bc5693d4ca307cad4ef5e069124e1ed25eb62b2086dcda29e9c8e8481631baa) | — | — |
 | 2 | `execute_transfer` | [`0xe3dff8…1f7e`](https://sepolia.etherscan.io/tx/0xe3dff8ed1870976a54a02cc82d3093ce47f11cde8dfd031d0b448a7671ab1f7e) | — | `tibsnk9bcntdogef6nii4` |
-| 3 | `workflow` (subscription) | [`0x5b0fd6…5bf7`](https://sepolia.etherscan.io/tx/0x5b0fd6bf8428c911d1f5882b8ac83604ee228c3c4173bcf17cd2bcacd5e25bf7) | [OK] sponsored | `ejwpzvyanilj5hkeqg1wp` |
-| 4 | `execute_transfer` (NL Agent) | [`0xf98cd5…6582`](https://sepolia.etherscan.io/tx/0xf98cd5a476fd61e12af321a72b876f607d7ce8035f5298cd735e2b4d7c666582) | [OK] sponsored | `6lagptosr08ei7e6mtipo` |
+| 3 | `workflow` (subscription) | [`0x5b0fd6…5bf7`](https://sepolia.etherscan.io/tx/0x5b0fd6bf8428c911d1f5882b8ac83604ee228c3c4173bcf17cd2bcacd5e25bf7) | sponsored | `ejwpzvyanilj5hkeqg1wp` |
+| 4 | `execute_transfer` (NL Agent) | [`0xf98cd5…6582`](https://sepolia.etherscan.io/tx/0xf98cd5a476fd61e12af321a72b876f607d7ce8035f5298cd735e2b4d7c666582) | sponsored | `6lagptosr08ei7e6mtipo` |
 | 5 | `execute_transfer` | [`0x53399d…5eab`](https://sepolia.etherscan.io/tx/0x53399d71ff2b3151753261a5915259975276148ee68fa8771bc06d81a1b45eab) | — | — |
-| 6 | `execute_transfer` | [`0x610036…c121`](https://sepolia.etherscan.io/tx/0x6100369c0f9eadd208bc281ea64ef2b9e69489531a29ecfdaf17b239a7bbc121) | [OK] sponsored | — |
+| 6 | `execute_transfer` | [`0x610036…c121`](https://sepolia.etherscan.io/tx/0x6100369c0f9eadd208bc281ea64ef2b9e69489531a29ecfdaf17b239a7bbc121) | sponsored | — |
 | 7 | `execute_transfer` (subscription scheduler) | [`0x424af7…ca65`](https://sepolia.etherscan.io/tx/0x424af7e9bba7f1b32aa6395d70839c114184a755bf6593fde746672fa803ca65) | — | `iri3e6q76u1dhfqcdyfjm` |
 
 ---
@@ -238,12 +238,12 @@ Validation chain (any failure = reject, never goes on-chain)
 
 Full report in [`AUDIT_REPORT.md`](AUDIT_REPORT.md) (6 bugs fixed, 3 follow-ups retained):
 
-- [OK] B-01: terminal-state judgment (pending no longer misread as success)
-- [OK] B-02: simulate result validation (`wouldRevert` detected)
-- [OK] B-03: x402 facilitator domain allowlist
-- [OK] B-04: x402 amount calculation cleanup
-- [OK] B-05: reuse the same idempotency key across retries (no double-pay; from external review)
-- [OK] B-06: true-timer subscription scheduler (from external review: "subscription was just a one-time transfer")
+- B-01: terminal-state judgment (pending no longer misread as success)
+- B-02: simulate result validation (`wouldRevert` detected)
+- B-03: x402 facilitator domain allowlist
+- B-04: x402 amount calculation cleanup
+- B-05: reuse the same idempotency key across retries (no double-pay; from external review)
+- B-06: true-timer subscription scheduler (from external review: "subscription was just a one-time transfer")
 
 ---
 
@@ -291,27 +291,27 @@ paykeeper/
 
 > **Execution is weighted heavily, because that is the point.**
 
-### 1. Does it execute onchain via KeeperHub? [OK]
+### 1. Does it execute onchain via KeeperHub?（通过）
 
 - **18 real Sepolia transactions** (7 linked above with full `transactionHash`, `executionId`, `gasUsed`, `sponsored` fields)
 - Not mockups: every transaction is a real KeeperHub broadcast, verifiable in the browser
 
-### 2. Use of KeeperHub surfaces [OK]
+### 2. Use of KeeperHub surfaces（通过）
 
-- [OK] **MCP server** (35 tools, `agent/keeperhub_mcp.py`)
-- [OK] **Direct execution** `execute_transfer` / `execute_contract_call`
-- [OK] **x402 / MPP pay-per-use** (EIP-3009 signing + facilitator allowlist)
-- [OK] **Workflow builder** (create / validate / execute / poll, 442 actions + 6 triggers)
-- [OK] **Audit trail** (every execution returns audit nodes + console visualization)
+- **MCP server** (35 tools, `agent/keeperhub_mcp.py`)
+- **Direct execution** `execute_transfer` / `execute_contract_call`
+- **x402 / MPP pay-per-use** (EIP-3009 signing + facilitator allowlist)
+- **Workflow builder** (create / validate / execute / poll, 442 actions + 6 triggers)
+- **Audit trail** (every execution returns audit nodes + console visualization)
 
-### 3. Reliability and observability [OK]
+### 3. Reliability and observability（通过）
 
-- [OK] **Failure mode handling**: `simulate` pre-flight rejects `wouldRevert=true` txs
-- [OK] **Retries**: exponential backoff (1.5s -> 3s -> 6s), **reusing the same idempotency key** (mock-tested — prevents double-pay when the first attempt was on-chain but the response timed out)
-- [OK] **Gas handling**: `Gas Sponsorship` (`sponsored:true` verified on multiple txs) + gas estimation & receipts for non-sponsored
-- [OK] **Audit trail usage**: every execution returns `audit_trail` (simulate / broadcast / confirm nodes)
+- **Failure mode handling**: `simulate` pre-flight rejects `wouldRevert=true` txs
+- **Retries**: exponential backoff (1.5s -> 3s -> 6s), **reusing the same idempotency key** (mock-tested — prevents double-pay when the first attempt was on-chain but the response timed out)
+- **Gas handling**: `Gas Sponsorship` (`sponsored:true` verified on multiple txs) + gas estimation & receipts for non-sponsored
+- **Audit trail usage**: every execution returns `audit_trail` (simulate / broadcast / confirm nodes)
 
-### 4. Originality and real-world usefulness [OK]
+### 4. Originality and real-world usefulness（通过）
 
 PayKeeper solves a real need: **let anyone who can speak natural language trigger auditable on-chain payments.**
 
@@ -322,14 +322,14 @@ PayKeeper solves a real need: **let anyone who can speak natural language trigge
 
 Use cases: DAO treasury payroll, DeFi auto-subscription (VPN/SaaS delegation), AI-Agent micropayments, e-commerce auto-settlement.
 
-### 5. Integration quality and developer experience [OK]
+### 5. Integration quality and developer experience（通过）
 
-- [OK] **9 LLM providers**, switch with one env var (`agent/agent.py` registry design, model names user-configured)
-- [OK] **End-to-end docs**: `docs/TUTORIAL.md` (zero -> first tx), `docs/DEMO_SCRIPT.md` (recording guide)
-- [OK] **Demo script works out of the box**: `python examples/full_demo.py` runs in one command
-- [OK] **Dependency pins**: `mcp<2.0` + `httpx<0.28` (avoids API compat issues, documented in `requirements.txt`)
-- [OK] **Security audit visible**: `AUDIT_REPORT.md` lists 6 fixed bugs + 3 follow-ups
-- [OK] **Zero external DB dependency**: pure Python + MCP, no DB / Redis required
+- **9 LLM providers**, switch with one env var (`agent/agent.py` registry design, model names user-configured)
+- **End-to-end docs**: `docs/TUTORIAL.md` (zero -> first tx), `docs/DEMO_SCRIPT.md` (recording guide)
+- **Demo script works out of the box**: `python examples/full_demo.py` runs in one command
+- **Dependency pins**: `mcp<2.0` + `httpx<0.28` (avoids API compat issues, documented in `requirements.txt`)
+- **Security audit visible**: `AUDIT_REPORT.md` lists 6 fixed bugs + 3 follow-ups
+- **Zero external DB dependency**: pure Python + MCP, no DB / Redis required
 
 ---
 

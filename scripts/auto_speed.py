@@ -106,4 +106,4 @@ probe = subprocess.run(
     capture_output=True, text=True, check=True)
 import json
 dur = json.loads(probe.stdout)["format"]["duration"]
-print(f"\n[OK] 输出: {OUTPUT}  时长 {round(float(dur),1)} 秒")
+print(f"\n输出: {OUTPUT}  时长 {round(float(dur),1)} 秒")
