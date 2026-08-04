@@ -429,9 +429,9 @@ function onProviderChange() {
  const p = $('pvProvider').value;
  // 仅 custom 需要 base_url；非 custom 用默认 base_url
  $('pvBaseUrlRow').style.display = p === 'custom' ? '' : 'none';
- // 填默认模型提示（不强制，用户可改）
+ // 填模型占位提示（不强制，用户可改；代码不预设默认模型）
  const opt = pvOptions.find(o => o.id === p);
- if (opt && !$('pvModel').value) $('pvModel').placeholder = opt.default_model || '输入模型名';
+ if (opt && !$('pvModel').value) $('pvModel').placeholder = opt.model_hint || '输入模型名';
 }
 
 async function saveProvider() {

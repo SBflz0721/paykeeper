@@ -281,17 +281,18 @@ async def list_executions(limit: int = 50) -> list[dict]:
 
 # ----------------------------------------------------------------------
 # Provider 配置（前端可视化配置，运行时生效，不写 .env）
+# model_hint 仅作输入框占位提示；代码不预设默认模型，模型名由用户填写
 # ----------------------------------------------------------------------
 PROVIDER_OPTIONS = [
-    {"id": "anthropic", "label": "Anthropic", "default_model": "claude-sonnet-4-5"},
-    {"id": "openai", "label": "OpenAI", "default_model": "gpt-5"},
-    {"id": "deepseek", "label": "DeepSeek", "default_model": "deepseek-chat"},
-    {"id": "openrouter", "label": "OpenRouter", "default_model": "anthropic/claude-sonnet-4.5"},
-    {"id": "groq", "label": "Groq", "default_model": "llama-3.3-70b-versatile"},
-    {"id": "moonshot", "label": "Moonshot / Kimi", "default_model": "kimi-k2.5"},
-    {"id": "zhipu", "label": "Zhipu GLM", "default_model": "glm-4.6"},
-    {"id": "ollama", "label": "Ollama (local)", "default_model": "qwen3:14b"},
-    {"id": "custom", "label": "Custom (OpenAI-compatible)", "default_model": ""},
+    {"id": "anthropic", "label": "Anthropic", "model_hint": "claude-sonnet-4-5"},
+    {"id": "openai", "label": "OpenAI", "model_hint": "gpt-5"},
+    {"id": "deepseek", "label": "DeepSeek", "model_hint": "deepseek-chat"},
+    {"id": "openrouter", "label": "OpenRouter", "model_hint": "anthropic/claude-sonnet-4.5"},
+    {"id": "groq", "label": "Groq", "model_hint": "llama-3.3-70b-versatile"},
+    {"id": "moonshot", "label": "Moonshot / Kimi", "model_hint": "kimi-k2.5"},
+    {"id": "zhipu", "label": "Zhipu GLM", "model_hint": "glm-4.6"},
+    {"id": "ollama", "label": "Ollama (local)", "model_hint": "qwen3:14b"},
+    {"id": "custom", "label": "Custom (OpenAI-compatible)", "model_hint": ""},
 ]
 
 

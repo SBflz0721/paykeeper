@@ -3,7 +3,7 @@
 - **审计对象**：PayKeeper（KeeperHub Agents Onchain Hackathon 参赛项目）
 - **审计日期**：2026-08-03（修订 2026-08-04）
 - **审计范围**：`agent/`、`examples/`、`docs/`、`.env*`、`requirements.txt`、`mcp_config.json`
-- **审计方式**：静态代码审查 + 真实链上执行验证（16 笔 Sepolia 交易）+ git 敏感信息核查
+- **审计方式**：静态代码审查 + 真实链上执行验证（18 笔 Sepolia 交易）+ git 敏感信息核查
 
 ---
 
@@ -11,7 +11,7 @@
 
 | 类别 | 结果 |
 |------|------|
-| 真实交易验证 | [OK] 16 笔 Sepolia 交易经 KeeperHub 执行成功 |
+| 真实交易验证 | [OK] 18 笔 Sepolia 交易经 KeeperHub 执行成功 |
 | 敏感信息泄露 | [!] 1 项（`kh_` Key 暴露于对话；已确保不进 git），**建议轮换** |
 | 已修复 bug/漏洞 | 6 项（2 高、2 中、2 低） |
 | 待跟进事项 | 3 项（中/低/信息） |
@@ -131,7 +131,7 @@
 | 端点 | 结果 |
 |------|------|
 | `GET /health` | [OK] `{"status":"ok","tools":35}` |
-| `GET /` | [OK] 首页含 5 个 Tab（执行/规则/记录/钱包/Provider） |
+| `GET /` | [OK] 首页含 6 个 Tab（执行/规则/记录/钱包/Provider/KeeperHub） |
 | `GET/POST /api/provider` | [OK] 前端可视化配置 provider，运行时生效，key 脱敏显示 |
 | `POST /api/rules` | [OK] 创建规则（白名单/单笔/每日限额） |
 | `POST /api/execute` | [OK] 风控拦截（白名单/限额）返回 `rejected` 并记录；合法请求真实上链（第 18 笔 `0x65203c…`，审计 policy->simulate->broadcast） |

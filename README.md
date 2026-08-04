@@ -1,81 +1,40 @@
-# PayKeeper 
+# PayKeeper
 
-> **自然语言 -> KeeperHub 执行层 -> 真实链上交易**：让 AI Agent 在 Sepolia / 主网上经 KeeperHub 完成付款、订阅、按次付费。
->
-> 参赛作品 · [KeeperHub — Agents Onchain Hackathon](https://dorahacks.io/hackathon/agents-onchain/detail) · [English README ->](README_EN.md)
+> 用一句自然语言，让 AI Agent 经 KeeperHub 在链上自动完成付款、订阅与按次付费——每一步都可审计。
 
-![GitHub repo size](https://img.shields.io/github/repo-size/SBflz0721/paykeeper)
-![Demo](https://img.shields.io/badge/demo-real_onchain-3fb950)
-![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-yellow)
+[![GitHub repo size](https://img.shields.io/github/repo-size/SBflz0721/paykeeper)](https://github.com/SBflz0721/paykeeper)
+[![Demo](https://img.shields.io/badge/demo-real_onchain-3fb950)](demo/paykeeper_demo_final.mp4)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](requirements.txt)
+[![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
-> **TL;DR** —— 一行自然语言（如「给 `0xc4Ef…` 转 0.005 ETH」），Agent 自动通过 KeeperHub MCP 选工具、预飞、广播、回执确认，每一步都可审计。
+参赛作品 · [KeeperHub — Agents Onchain Hackathon](https://dorahacks.io/hackathon/agents-onchain/detail) · [English README ->](README_EN.md)
 
 ---
 
-## 演示视频（真实终端录制，3 个能力串联）
+## 为什么做这个（Why This Exists）
 
- 仓库根目录：[`demo/paykeeper_demo_final.mp4`](demo/paykeeper_demo_final.mp4)（38 秒，1600×900）
+链上付款对普通用户仍然太"工程化"：要选工具、拼参数、盯回执、防双付。**PayKeeper 把这件事变成一句话**。
 
-视频展示了一次 Python 进程内串联的 3 个真实链上能力，**全部经 KeeperHub 真实执行**（非模拟、非 HTML）：
+你说「每周五给 `0x…` 转 0.01 ETH，日限额 0.05」，Agent 负责：解析意图 -> 匹配风控规则 -> 经 KeeperHub MCP 预飞 -> 幂等广播 -> 轮询确认 -> 输出可审计报告。钱真的在链上动了，但用户全程只说人话。
 
-1. **确定性转账** —— `simulate` 预飞 -> 幂等键广播 -> 状态轮询 -> 审计
-2. **自然语言 Agent（DeepSeek）** —— 用户一句话 -> Agent 选 MCP 工具 -> 真实查询
-3. **订阅工作流** —— 手动触发 `web3/transfer-funds` -> 链上确认
-
----
-
-## 核心亮点
-
-| 维度 | 实现 |
-|------|------|
-| **真实执行** | Sepolia 上 18+ 笔链上交易可查（含 Gas Sponsorship），不是 mockup |
-| **完整风控层** | 白名单 + 单笔限额 + 每日累计限额（SQLite 持久化，执行前强制校验） |
-| **Web Dashboard** | FastAPI + 原生前端（6 标签页）：NL 建规则、手动执行、审计记录、钱包、Provider 配置、KeeperHub 配置 |
-| **9 个 LLM provider** | OpenAI 兼容协议一行切换（Anthropic / OpenAI / DeepSeek / OpenRouter / Groq / Moonshot / 智谱 / Ollama / 自定义） |
-| **可靠性** | simulate 预飞 -> **重试复用同一幂等键**（防双付）-> 指数退避 -> 状态轮询 -> 审计轨迹 |
-| **真定时器订阅** | `agent/subscription.py` cron 调度器：到点自动付款；KeeperHub Schedule 工作流作平台侧方案 |
-| **x402 按次付费** | EIP-3009 `TransferWithAuthorization` 签名 + facilitator 域名白名单 |
-| **审计可见** | 每次执行回传 execution_id、transactionHash、状态、审计节点 |
-| **安全** | 完成 6 项审计修复（B-01~B-06，含 2 项外部评审发现），保留 `AUDIT_REPORT.md` |
+**核心解决三个痛点**：
+1. **自然语言即支付指令**——不需要懂 MCP 工具、不需要拼 JSON 参数
+2. **钱的安全边界**——白名单 / 单笔限额 / 每日累计限额，LLM 理解错了也花不超
+3. **可审计、可重试、防双付**——幂等键一次生成全程复用，重试不会重复扣款
 
 ---
 
-## 架构
+## 演示视频（真实终端录制）
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ 用户自然语言（如"每月 1 号付 5 USDC"） │
-└──────────────────────┬───────────────────────────────────────────┘
- ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ LangGraph ReAct Agent · 9 个 LLM provider 可切换 │
-│ (Anthropic / OpenAI / DeepSeek / OpenRouter / Groq / ...) │
-└──────────────────────┬───────────────────────────────────────────┘
- ▼ MCP (Streamable HTTP, Bearer kh_*)
-┌──────────────────────────────────────────────────────────────────┐
-│ KeeperHub 执行层 │
-│ ┌──────────────┐ ┌────────────────┐ ┌─────────────────────┐ │
-│ │ MCP Server │ │ x402 / MPP │ │ Workflow Builder │ │
-│ │ (35 tools) │ │ Pay-per-use │ │ (Manual/Schedule/ │ │
-│ │ │ │ │ │ Webhook/Event/ │ │
-│ │ │ │ │ │ Block/Transfer) │ │
-│ └──────┬───────┘ └────────┬───────┘ └──────────┬──────────┘ │
-│ │ │ │ │
-│ └────────┬──────────┴─────────────────────┘ │
-│ ▼ │
-│ ┌──────────────────────────────────────────────────────────┐ │
-│ │ Turnkey Wallet · x402 Agentic Wallet · Audit Trail · │ │
-│ │ Gas Sponsorship (主网) │ │
-│ └──────────────────────────────────────────────────────────┘ │
-└──────────────────────┬───────────────────────────────────────────┘
- ▼
- EVM (Sepolia / Base / Mainnet)
-```
+[`demo/paykeeper_demo_final.mp4`](demo/paykeeper_demo_final.mp4)（38 秒，1600×900）——单进程串联 3 个真实链上能力，**全部经 KeeperHub 真实执行，非模拟**：
+
+1. **确定性转账**：`simulate` 预飞 -> 幂等广播 -> 状态轮询 -> 审计
+2. **自然语言 Agent（DeepSeek）**：一句话 -> Agent 选 MCP 工具 -> 真实上链
+3. **订阅工作流**：手动触发 `web3/transfer-funds` -> 链上确认
 
 ---
 
-## 快速开始（3 步上手）
+## 快速开始（3 步）
 
 ```bash
 # 1. 克隆 + 装依赖
@@ -84,29 +43,80 @@ pip install -r requirements.txt
 
 # 2. 配置环境（填入 KeeperHub Key 与任一 LLM Key）
 cp .env.example .env && nano .env
-# 必须：KEEPERHUB_API_KEY、LLM_PROVIDER、对应 provider 的 *_API_KEY
-# 可选：TARGET_CHAIN_ID、DEMO_RECIPIENT、DEMO_AMOUNT
+# 必填：KEEPERHUB_API_KEY（kh_ 前缀）、LLM_PROVIDER、对应 *_API_KEY、LLM_MODEL
 
 # 3. 一键跑真实演示（确定性转账 + 自然语言 Agent）
 python examples/run_demo.py
 ```
 
-`examples/full_demo.py` 在单进程内串联 3 个真实能力（确定性转账 / NL Agent / 订阅工作流），是**推荐演示入口**。
+> 推荐演示入口：`python examples/full_demo.py`——单进程串联确定性转账 / NL Agent / 订阅工作流三个真实能力。
 
 ---
 
-## LLM provider 选择（模型名由你自配，不硬编码）
+## 核心亮点
 
-> 代码**不预设默认模型**（模型迭代快，硬编码会过时）。你只需在 `.env` 设置：
-> `LLM_PROVIDER=<provider>` + 对应 `*_API_KEY` + **`LLM_MODEL=<模型名>`**（必填）。
+| 维度 | 实现 |
+|------|------|
+| **真实执行** | **18 笔** Sepolia 链上交易可查（含 Gas Sponsorship），不是 mockup |
+| **完整风控层** | 白名单 + 单笔限额 + 每日累计限额（SQLite 持久化，执行前强制校验） |
+| **Web Dashboard** | FastAPI + 原生前端（6 标签页）：NL 建规则、手动执行、审计记录、钱包、Provider 配置、KeeperHub 配置 |
+| **9 个 LLM provider** | OpenAI 兼容协议一行切换（Anthropic / OpenAI / DeepSeek / OpenRouter / Groq / Moonshot / 智谱 / Ollama / 自定义） |
+| **可靠性** | simulate 预飞 -> **重试复用同一幂等键**（防双付）-> 指数退避 -> 状态轮询 -> 审计轨迹 |
+| **真定时器订阅** | `agent/subscription.py` cron 调度器：到点自动付款；KeeperHub Schedule 工作流作平台侧方案 |
+| **x402 按次付费** | EIP-3009 `TransferWithAuthorization` 签名 + facilitator 域名白名单 |
+| **安全** | 完成 6 项审计修复（B-01~B-06，含 2 项外部评审发现），报告见 `AUDIT_REPORT.md` |
 
-`agent/agent.py` 内置 provider 注册表（每个 provider 提供便捷 base_url + key 名），改 `LLM_PROVIDER` 一行即可切换：
+---
 
-| `LLM_PROVIDER` | 需要的 key | 示例 `LLM_MODEL`（以各平台控制台为准） | 备注 |
-|----------------|-----------|----------------------------------------|------|
-| `anthropic`（默认） | `ANTHROPIC_API_KEY`（或 `ANTHROPIC_MODEL`） | `claude-sonnet-4-5` | Claude 4.5 |
-| `openai` | `OPENAI_API_KEY` | `gpt-5` | GPT-5 旗舰 |
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat`（V4） | 走 OpenAI 兼容 API |
+## 架构
+
+```
+用户自然语言（如"每月 1 号付 5 USDC"）
+        |
+        v
+┌─────────────────────────────────────────────────────┐
+│ LangGraph ReAct Agent · 9 个 LLM provider 可切换     │
+│ (Anthropic / OpenAI / DeepSeek / OpenRouter / ...)  │
+└────────────────────────┬────────────────────────────┘
+                         | MCP (Streamable HTTP, Bearer kh_*)
+                         v
+┌─────────────────────────────────────────────────────┐
+│ KeeperHub 执行层                                     │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  │
+│  │ MCP Server  │  │ x402 / MPP   │  │ Workflow   │  │
+│  │ (35 tools)  │  │ Pay-per-use  │  │ Builder    │  │
+│  └──────┬──────┘  └──────┬───────┘  └─────┬──────┘  │
+│         └────────┬───────┴────────┬────────┘        │
+│                  v                v                 │
+│  Turnkey Wallet · x402 Agentic Wallet · Audit Trail │
+│  Gas Sponsorship (主网)                             │
+└────────────────────────┬────────────────────────────┘
+                         | EVM
+                         v
+              Sepolia / Base / Mainnet
+```
+
+---
+
+## 配置
+
+### LLM Provider（模型名由你自配，代码不硬编码）
+
+代码**不预设默认模型**（模型迭代快，硬编码会过时）。在 `.env` 设置三件事：
+
+```
+LLM_PROVIDER=<provider>      # anthropic | openai | deepseek | openrouter | groq | moonshot | zhipu | ollama | custom
+<对应 *_API_KEY>              # 如 DEEPSEEK_API_KEY=sk-xxx
+LLM_MODEL=<模型名>            # 必填，以各平台控制台为准
+```
+
+`agent/agent.py` 内置 provider 注册表（每个 provider 提供便捷 base_url + key 名），改 `LLM_PROVIDER` 一行切换：
+
+| `LLM_PROVIDER` | 需要的 key | 示例 `LLM_MODEL`（以平台控制台为准） | 备注 |
+|----------------|-----------|--------------------------------------|------|
+| `anthropic`（默认） | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` | 也可用 `ANTHROPIC_MODEL` |
+| `openai` | `OPENAI_API_KEY` | `gpt-5` | |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` | 走 OpenAI 兼容 API |
 | `openrouter` | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4.5` | 一个 key 路由多 provider |
 | `groq` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | Groq LPU 极速推理 |
 | `moonshot` | `MOONSHOT_API_KEY` | `kimi-k2.5` | Moonshot / Kimi |
@@ -114,48 +124,67 @@ python examples/run_demo.py
 | `ollama` | 无需 key | `qwen3:14b` | 本地推理（先 `ollama pull <模型名>`） |
 | `custom` | `OPENAI_COMPATIBLE_BASE_URL` + `_API_KEY` + `_MODEL` | 任意 | 任意 OpenAI 兼容端点 |
 
-示例（DeepSeek）：
-
-```bash
-LLM_PROVIDER=deepseek
-DEEPSEEK_API_KEY=sk-xxxx
-LLM_MODEL=deepseek-chat
-```
-
 缺 `LLM_MODEL` 时程序会 fail-fast 并提示去对应平台查可用模型。
+
+### KeeperHub
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `KEEPERHUB_API_KEY` | 是 | `kh_` 前缀，在 app.keeperhub.com -> Settings -> API Keys 创建 |
+| `WALLET_INTEGRATION_ID` | 否 | KeeperHub 托管钱包 integrationId（Dashboard 钱包页用） |
+| `KEEPERHUB_MCP_URL` | 否 | 默认 `https://app.keeperhub.com/mcp` |
+| `KEEPERHUB_MCP_TRANSPORT` | 否 | 默认 `streamable_http` |
+
+> 以上配置也可以在 **Web Dashboard 前端直接填写**（Provider 标签页 / KeeperHub 标签页），运行时注入环境变量，无需改 `.env`。
 
 ---
 
-## KeeperHub 能力覆盖
+## 用法
 
-| KeeperHub Surface | 本项目用法 | 代码位置 |
-|--------------------|-----------|---------|
-| **MCP Server**（Streamable HTTP） | `agent/keeperhub_mcp.py` 连接 `app.keeperhub.com/mcp` | `agent/keeperhub_mcp.py` |
-| **直接执行** `execute_transfer` | 确定性 / 订阅转账，simulate+广播+轮询 | `agent/payments.py` |
-| **直接执行** `execute_contract_call` | 通用合约调用 | `agent/payments.py` |
-| **Workflow Builder** | 创建 / 校验 / 执行 / 轮询工作流（442 actions） | `examples/workflow_demo.py` |
-| **6 个触发器** | Manual / Schedule / Webhook / Event / Block / Transfer | `examples/workflow_demo.py` |
-| **x402 / MPP 按次付费** | EIP-3009 签名 + facilitator 域名白名单 | `agent/x402_client.py` |
-| **审计轨迹** | 每次执行回传 execution_id、状态、审计节点 | `agent/payments.py` `to_report()` |
-| **Gas Sponsorship** | Sepolia/主网执行 `sponsored:true`（已在 `examples/output/transactions_log.md` 验证） | 通过 KeeperHub 控制台启用 |
-| **Audit Trail UI** | KeeperHub 控制台可视化执行历史 | 控制台入口 |
+### 命令行示例
+
+```bash
+python examples/run_demo.py            # 确定性转账 + 自然语言 Agent
+python examples/full_demo.py           # 3 个真实能力串联（推荐演示）
+python examples/subscription_demo.py   # 订阅调度器：立即执行一次 + 显示下次触发
+python examples/subscription_demo.py --wait  # 额外等待定时触发并自动执行
+python examples/transfer_demo.py       # 仅转账
+python examples/workflow_demo.py       # 工作流创建 -> 执行 -> 轮询
+```
+
+### Web Dashboard
+
+`web/` 提供浏览器界面（FastAPI + 原生 HTML，零构建）：
+
+```bash
+uvicorn web.app:app --host 0.0.0.0 --port 8000
+# 打开 http://localhost:8000
+```
+
+| 标签页 | 功能 |
+|--------|------|
+| **执行** | 自然语言建规则（一句话 -> LLM 解析 -> 确认创建）；手动执行（选规则 + 地址 + 金额 -> 风控校验 -> 真实上链） |
+| **规则** | 创建 / 启用 / 禁用 / 删除风控规则（白名单、单笔限额、每日累计限额、cron） |
+| **执行记录** | 全审计：风控拒绝 / 链上成功 / 失败 + txHash Etherscan 链接 |
+| **钱包** | 查看 KeeperHub 托管钱包地址 |
+| **Provider** | 前端配置 LLM provider（选 provider + API Key + 模型名 + base_url），运行时生效，不写 `.env` |
+| **KeeperHub** | 前端配置 KeeperHub API Key + Wallet Integration ID，运行时注入环境变量，不写 `.env` |
 
 ---
 
 ## 真实链上交易记录（Sepolia, Chain ID `11155111`）
 
-所有交易均由 KeeperHub 真实广播，浏览器可查：
+以下 7 笔可直接在 Etherscan 验证；累计 **18 笔** 真实交易（完整记录见本地 `examples/output/transactions_log.md`，该目录不入库）。
 
 | # | 类型 | 交易哈希 | Gas 赞助 | 执行 ID |
 |---|------|---------|---------|---------|
 | 1 | `execute_transfer` | [`0x8bc569…1baa`](https://sepolia.etherscan.io/tx/0x8bc5693d4ca307cad4ef5e069124e1ed25eb62b2086dcda29e9c8e8481631baa) | — | — |
 | 2 | `execute_transfer` | [`0xe3dff8…1f7e`](https://sepolia.etherscan.io/tx/0xe3dff8ed1870976a54a02cc82d3093ce47f11cde8dfd031d0b448a7671ab1f7e) | — | `tibsnk9bcntdogef6nii4` |
-| 3 | `workflow` (subscription) | [`0x5b0fd6…5bf7`](https://sepolia.etherscan.io/tx/0x5b0fd6bf8428c911d1f5882b8ac83604ee228c3c4173bcf17cd2bcacd5e25bf7) | [OK] sponsored | `ejwpzvyanilj5hkeqg1wp` |
-| 4 | `execute_transfer` (NL Agent) | [`0xf98cd5…6582`](https://sepolia.etherscan.io/tx/0xf98cd5a476fd61e12af321a72b876f607d7ce8035f5298cd735e2b4d7c666582) | [OK] sponsored | `6lagptosr08ei7e6mtipo` |
+| 3 | `workflow`（订阅） | [`0x5b0fd6…5bf7`](https://sepolia.etherscan.io/tx/0x5b0fd6bf8428c911d1f5882b8ac83604ee228c3c4173bcf17cd2bcacd5e25bf7) | [OK] sponsored | `ejwpzvyanilj5hkeqg1wp` |
+| 4 | `execute_transfer`（NL Agent） | [`0xf98cd5…6582`](https://sepolia.etherscan.io/tx/0xf98cd5a476fd61e12af321a72b876f607d7ce8035f5298cd735e2b4d7c666582) | [OK] sponsored | `6lagptosr08ei7e6mtipo` |
 | 5 | `execute_transfer` | [`0x53399d…5eab`](https://sepolia.etherscan.io/tx/0x53399d71ff2b3151753261a5915259975276148ee68fa8771bc06d81a1b45eab) | — | — |
 | 6 | `execute_transfer` | [`0x610036…c121`](https://sepolia.etherscan.io/tx/0x6100369c0f9eadd208bc281ea64ef2b9e69489531a29ecfdaf17b239a7bbc121) | [OK] sponsored | — |
-
-完整列表见 [`examples/output/transactions_log.md`](examples/output/transactions_log.md)（注：`examples/output/` 在 `.gitignore` 中，本地留存）。
+| 7 | `execute_transfer`（订阅调度器） | [`0x424af7…ca65`](https://sepolia.etherscan.io/tx/0x424af7e9bba7f1b32aa6395d70839c114184a755bf6593fde746672fa803ca65) | — | `iri3e6q76u1dhfqcdyfjm` |
 
 ---
 
@@ -164,35 +193,28 @@ LLM_MODEL=deepseek-chat
 ### 可靠性三层防护
 
 ```
-请求 ──► [1] simulate=true 预飞 ──► [2] 幂等键 broadcast ──► [3] 状态轮询
- │ │ │
- ▼ ▼ ▼
- wouldRevert? transfer-funds success/failed
- false -> 继续 提交真实交易 指数退避重试
- true -> 拒绝 同一幂等键（防双付）
+请求 -> [1] simulate=true 预飞 -> [2] 幂等键 broadcast -> [3] 状态轮询
+        |                        |                        |
+        v                        v                        v
+  wouldRevert?            transfer-funds            success/failed
+  false -> 继续            提交真实交易              指数退避重试
+  true -> 拒绝             同一幂等键（防双付）
 ```
 
-### 关键实现
-
-- **幂等键**：`uuid4().hex` 一次生成、**重试全程复用**（若首笔已上链但响应超时，重试仍是同一张"单"，KeeperHub 去重，绝不双付）—— 已通过 mock 单测验证
-- **指数退避**：默认 1.5s 起步，2x 递增，最多 3 次
+- **幂等键**：`uuid4().hex` 一次生成、**重试全程复用**——若首笔已上链但响应超时，重试仍是同一张"单"，KeeperHub 去重，绝不双付（已通过 mock 单测验证）
+- **指数退避**：1.5s 起步，2x 递增，最多 3 次
 - **状态轮询**：等待 `success | completed | failed | reverted` 终态
 - **审计轨迹**：每次执行回传完整 `audit_trail`（simulate / broadcast / confirm 节点）
 - **x402 facilitator 白名单**：强制 HTTPS + 后缀白名单（默认仅 `keeperhub.com`，防钓鱼）
 
 ### 真定时器订阅
 
-`agent/subscription.py` 实现了**真正的 cron 订阅调度器**（`SubscriptionManager` + 最小 cron 解析器）：
+`agent/subscription.py` 实现**真正的 cron 订阅调度器**（`SubscriptionManager` + 最小 cron 解析器，9/9 测试用例通过）：
 
-- 每个订阅配置 cron（如 `0 0 1 * *` 每月 1 号 00:00 UTC）
+- 每个订阅配置 cron（如 `0 0 1 * *` = 每月 1 号 00:00 UTC）
 - 调度循环到点自动调用 `execute_transfer`（复用可靠性层）
-- 支持 `run_once` 立即执行、`--wait` 等待下一次定时触发、多订阅并发
-- 平台侧方案：KeeperHub Schedule 工作流（`triggerType=Schedule` + cron），由平台自动触发
-
-```bash
-python examples/subscription_demo.py # 立即执行一次 + 显示下次触发
-python examples/subscription_demo.py --wait # 额外等待定时触发并自动执行
-```
+- 支持 `run_once` 立即执行、`--wait` 等待下一次触发、多订阅并发
+- 平台侧方案：KeeperHub Schedule 工作流（`triggerType=Schedule` + cron）
 
 ### 完整风控层
 
@@ -210,41 +232,11 @@ python examples/subscription_demo.py --wait # 额外等待定时触发并自动�
 - **SQLite 持久化**：规则 + 执行记录（含 tx_hash / 状态 / 错误），零额外依赖
 - **记账**：成功执行自动计入当日累计，用于每日限额
 - **集成**：`execute_transfer(policy_engine=..., policy_rule_id=...)` 执行前校验、成功后记账，审计轨迹含 `policy` 节点
-- 单测覆盖：地址格式 / 白名单 / 单笔限额 / 每日限额 / 禁用 / 空白名单 / 规则不存在（8/8 [OK]）+ 集成测试（5/5 [OK]）
-
-```python
-from agent.policy import PolicyEngine, PolicyRule
-engine = PolicyEngine()
-rule_id = engine.add_rule(PolicyRule(
- name="DAO 周薪", whitelist=["0x..."],
- single_limit_wei=int(0.1*1e18), daily_limit_wei=int(0.5*1e18),
-))
-verdict = engine.check(rule_id, "0x...", int(0.01*1e18)) # ok=True/False
-```
-
-### Web Dashboard
-
-`web/` 提供浏览器界面（FastAPI + 原生 HTML，零构建）：
-
-| 功能 | 说明 |
-|------|------|
-| **自然语言建规则** | 输入一句话 -> LLM 解析成结构化规则（地址/金额/cron/限额）-> 确认创建 |
-| **手动执行** | 选规则 + 地址 + 金额 -> 风控校验 -> KeeperHub 真实上链 |
-| **规则管理** | 创建 / 启用 / 禁用 / 删除（白名单、单笔、每日限额） |
-| **执行记录** | 全审计：风控拒绝 / 链上成功 / 失败 + txHash 链接 |
-| **钱包** | 查看 KeeperHub 托管钱包地址（`.env` 配 `WALLET_INTEGRATION_ID`） |
-| **Provider 配置** | 前端可视化配置 LLM provider（选 provider + API Key + 模型名 + base_url），运行时生效，不写 `.env`；`GET/POST /api/provider` |
-| **KeeperHub 配置** | 前端可视化配置 KeeperHub API Key + Wallet Integration ID，运行时注入环境变量，不写 `.env`；`GET/POST /api/keeperhub-config` |
-
-```bash
-# 启动（需 .env 配好 KeeperHub key；自然语言解析另需任一 LLM key）
-uvicorn web.app:app --host 0.0.0.0 --port 8000
-# 打开 http://localhost:8000
-```
+- 测试覆盖：8/8 单元测试 + 5/5 集成测试
 
 ### 安全审计
 
-完整审计报告见 [`AUDIT_REPORT.md`](AUDIT_REPORT.md)（6 项 bug 已修复，3 项 follow-up 保留）：
+完整报告见 [`AUDIT_REPORT.md`](AUDIT_REPORT.md)（6 项 bug 已修复，3 项 follow-up 保留）：
 
 - [OK] B-01：执行状态判定（pending 不再误判为 success）
 - [OK] B-02：simulate 结果校验（`wouldRevert` 检测）
@@ -259,39 +251,35 @@ uvicorn web.app:app --host 0.0.0.0 --port 8000
 
 ```
 paykeeper/
-├── agent/ # 核心模块
-│ ├── keeperhub_mcp.py # KeeperHub MCP 客户端（35 tools）
-│ ├── payments.py # 转账 / 合约调用 / 工作流（可靠性层 + 风控集成）
-│ ├── policy.py # 完整风控引擎（白名单 / 限额 / SQLite）
-│ ├── subscription.py # 真正的 cron 订阅调度器（真定时器）
-│ ├── agent.py # LangGraph ReAct Agent + 9-provider 注册表
-│ └── x402_client.py # EIP-3009 签名 + facilitator 校验
-├── web/ # Web Dashboard
-│   ├── app.py            # FastAPI 后端（规则/执行/钱包/NL解析/Provider配置/KeeperHub配置）
+├── agent/                    # 核心模块
+│   ├── keeperhub_mcp.py      # KeeperHub MCP 客户端（35 tools）
+│   ├── payments.py           # 转账 / 合约调用 / 工作流（可靠性层 + 风控集成）
+│   ├── policy.py             # 完整风控引擎（白名单 / 限额 / SQLite）
+│   ├── subscription.py       # 真正的 cron 订阅调度器（真定时器）
+│   ├── agent.py              # LangGraph ReAct Agent + 9-provider 注册表
+│   └── x402_client.py        # EIP-3009 签名 + facilitator 校验
+├── web/                      # Web Dashboard
+│   ├── app.py                # FastAPI 后端（规则 / 执行 / 钱包 / NL 解析 / Provider / KeeperHub 配置）
 │   └── templates/index.html  # 前端单页 Dashboard（6 标签页）
-├── data/                 # 运行时数据（自动创建）
-│   ├── policy.db         # 风控规则 SQLite
-│   ├── provider.json     # LLM Provider 前端配置
-│   └── keeperhub.json    # KeeperHub 前端配置
-├── examples/ # 运行入口
-│ ├── run_demo.py # 默认：确定性转账 + NL Agent
-│ ├── full_demo.py # 3 个真实能力串联（推荐演示）
-│ ├── subscription_demo.py # 订阅调度器演示（run_once + --wait 定时触发）
-│ ├── transfer_demo.py # 仅转账
-│ ├── video_demo.py # 单次 NL Agent（紧凑叙事）
-│ └── workflow_demo.py # 工作流创建->执行->轮询
-├── docs/ # 文档（Bounty 材料 + 视频指南）
-│ ├── TUTORIAL.md # 从零到第一次 KeeperHub 交易
-│ ├── ONBOARDING_TEARDOWN.md # 上手指引 5 大痛点 + 改进建议
-│ └── DEMO_SCRIPT.md # 演示视频录制指南
-├── demo/ # 演示视频（真实终端录制）
-│ └── paykeeper_demo_final.mp4 # 38s 最终视频
-├── scripts/ # 辅助工具
-│ ├── gen_demo_html.py # 终端动画生成器（备用）
-│ └── auto_speed.py # 录屏自动变速
-├── AUDIT_REPORT.md # 安全审计报告
-├── README.md # 中文（本文档）
-├── README_EN.md # English
+├── examples/                 # 运行入口
+│   ├── run_demo.py           # 默认：确定性转账 + NL Agent
+│   ├── full_demo.py          # 3 个真实能力串联（推荐演示）
+│   ├── subscription_demo.py  # 订阅调度器演示（run_once + --wait 定时触发）
+│   ├── transfer_demo.py      # 仅转账
+│   ├── video_demo.py         # 单次 NL Agent（紧凑叙事）
+│   └── workflow_demo.py      # 工作流创建 -> 执行 -> 轮询
+├── docs/                     # 文档（Bounty 材料 + 视频指南）
+│   ├── TUTORIAL.md           # 从零到第一次 KeeperHub 交易
+│   ├── ONBOARDING_TEARDOWN.md # 上手指引 5 大痛点 + 改进建议
+│   └── DEMO_SCRIPT.md        # 演示视频录制指南
+├── demo/                     # 演示视频（真实终端录制）
+│   └── paykeeper_demo_final.mp4  # 38s 最终视频
+├── scripts/                  # 辅助工具
+│   ├── gen_demo_html.py      # 终端动画生成器（备用）
+│   └── auto_speed.py         # 录屏自动变速
+├── AUDIT_REPORT.md           # 安全审计报告
+├── README.md                 # 中文（本文档）
+├── README_EN.md              # English
 ├── requirements.txt
 ├── .env.example
 └── mcp_config.json
@@ -303,49 +291,43 @@ paykeeper/
 
 > **Execution is weighted heavily, because that is the point.**
 
-### ① Does it execute onchain via KeeperHub? [OK]
+### 1. Does it execute onchain via KeeperHub? [OK]
 
-- Working transactions, not mockups
-- **15+ 笔真实 Sepolia 交易**（见上表，每笔 Etherscan 可查）
-- 每笔都通过 KeeperHub 真实广播，含 `transactionHash`、`executionId`、`gasUsed`、`sponsored`
-- 完整交易日志见 `examples/output/transactions_log.md`
+- **18 笔真实 Sepolia 交易**（上表 7 笔附 Etherscan 链接，每笔含 `transactionHash`、`executionId`、`gasUsed`、`sponsored`）
+- 不是 mockup：全部经 KeeperHub 真实广播，浏览器可验证
 
-### ② Use of KeeperHub surfaces [OK]
-
-本项目覆盖了 KeeperHub 几乎所有核心 surface：
+### 2. Use of KeeperHub surfaces [OK]
 
 - [OK] **MCP server**（35 个工具，`agent/keeperhub_mcp.py`）
-- [OK] **CLI**（通过 Python SDK 等价调用 MCP 工具）
-- [OK] **x402 / MPP 按次付费**（EIP-3009 签名 + facilitator 白名单，`agent/x402_client.py`）
+- [OK] **直接执行** `execute_transfer` / `execute_contract_call`
+- [OK] **x402 / MPP 按次付费**（EIP-3009 签名 + facilitator 白名单）
 - [OK] **Workflow builder**（创建 / 校验 / 执行 / 轮询，442 actions + 6 触发器）
 - [OK] **Audit trail**（每次执行回传 + 控制台可视化）
 
-### ③ Reliability and observability [OK]
+### 3. Reliability and observability [OK]
 
 - [OK] **失败模式处理**：`simulate` 预飞拒绝 `wouldRevert=true` 的交易
-- [OK] **重试机制**：指数退避（1.5s -> 3s -> 6s），重试**复用同一幂等键**（已 mock 单测验证，防"首笔已上链但响应超时->重试双付"）
+- [OK] **重试机制**：指数退避（1.5s -> 3s -> 6s），重试**复用同一幂等键**（已 mock 单测验证，防"首笔已上链但响应超时 -> 重试双付"）
 - [OK] **Gas 处理**：`Gas Sponsorship`（`sponsored:true` 多笔验证）+ 非赞助场景的 gas 估算与回执
 - [OK] **审计使用**：每次执行回传 `audit_trail` 节点列表（simulate / broadcast / confirm）
-- [OK] **幂等键**：`uuid4().hex` 一次生成、重试全程复用（KeeperHub 按 key 去重）
 
-### ④ Originality and real-world usefulness [OK]
+### 4. Originality and real-world usefulness [OK]
 
 PayKeeper 解决一个真实需求：**让任何能说自然语言的人都能发起可审计的链上付款**。
 
-- **订阅代理（真定时器）**：`agent/subscription.py` cron 调度器到点自动付款（如"每月 1 号给 `0x…` 付 5 USDC"）；平台侧可用 KeeperHub Schedule 工作流
-- **余额守卫**："查询余额后若低于 0.5 ETH 就补足到 1 ETH" 类条件支付（Agent 推理可执行）
-- **按次付费**：x402 MPP 场景下 Agent 自动签名 EIP-3009 付款（`agent/x402_client.py`）
+- **订阅代理（真定时器）**：`agent/subscription.py` cron 调度器到点自动付款
+- **余额守卫**："查询余额后若低于 0.5 ETH 就补足到 1 ETH" 类条件支付
+- **按次付费**：x402 MPP 场景下 Agent 自动签名 EIP-3009 付款
 - **批量结算**：自然语言"把这两个地址各转 0.1 ETH" -> Agent 多次调用 `execute_transfer`
 
 适合场景：DAO 财库自动发薪、DeFi 自动化订阅（VPN/SaaS 代付）、AI Agent 之间 micropayment、电商自动结算。
 
-### ⑤ Integration quality and developer experience [OK]
+### 5. Integration quality and developer experience [OK]
 
-- [OK] **9 个 LLM provider** 一行切换（`agent/agent.py` 注册表设计）
+- [OK] **9 个 LLM provider** 一行切换（`agent/agent.py` 注册表设计，模型名用户自配）
 - [OK] **端到端文档**：`docs/TUTORIAL.md` 从零到第一次交易、`docs/DEMO_SCRIPT.md` 录屏指南
 - [OK] **演示脚本开箱即用**：`python examples/full_demo.py` 一行运行
 - [OK] **依赖锁定**：`mcp<2.0` + `httpx<0.28` 避免 API 兼容问题（requirements.txt）
-- [OK] **多平台兼容**：默认 `libopenh264` 在所有主流 Linux 都能跑
 - [OK] **安全审计可见**：`AUDIT_REPORT.md` 列出 6 个已修 bug + 3 个 follow-up
 - [OK] **零外部数据库依赖**：纯 Python + MCP，不引入 DB / Redis
 
@@ -361,7 +343,7 @@ PayKeeper 解决一个真实需求：**让任何能说自然语言的人都能�
 | Bounty 材料：教程 | [`docs/TUTORIAL.md`](docs/TUTORIAL.md) |
 | Bounty 材料：上手指引 | [`docs/ONBOARDING_TEARDOWN.md`](docs/ONBOARDING_TEARDOWN.md) |
 | 安全审计 | [`AUDIT_REPORT.md`](AUDIT_REPORT.md) |
-| 交易证据 | `examples/output/transactions_log.md`（本地留存） |
+| 交易证据 | 上表 7 笔 Etherscan 链接 + 本地完整日志 |
 
 ---
 
