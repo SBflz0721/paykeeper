@@ -56,7 +56,7 @@ async def main() -> None:
     chain_id = os.getenv("TARGET_CHAIN_ID", "11155111")
 
     banner(f"PayKeeper · 自主支付 Agent · 经 KeeperHub 链上执行（链 {chain_id}）")
-    print(f"  LLM provider : {os.getenv('LLM_PROVIDER', 'anthropic')} / {os.getenv('LLM_MODEL', '默认')}")
+    print(f"  LLM provider : {os.getenv('LLM_PROVIDER', 'anthropic')} / {os.getenv('LLM_MODEL', '(未设置 LLM_MODEL)')}")
 
     async with KeeperHubMCP() as kh:
         tools = kh.get_tools()

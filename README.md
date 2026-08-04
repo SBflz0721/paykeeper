@@ -93,23 +93,34 @@ python examples/run_demo.py
 
 ---
 
-## 🤖 LLM provider 选择（默认模型均为 **2026-08 最新版本**）
+## 🤖 LLM provider 选择（模型名由你自配，不硬编码）
 
-`agent/agent.py` 内置 provider 注册表。改 `.env` 中 `LLM_PROVIDER` 一行即可切换：
+> 代码**不预设默认模型**（模型迭代快，硬编码会过时）。你只需在 `.env` 设置：
+> `LLM_PROVIDER=<provider>` + 对应 `*_API_KEY` + **`LLM_MODEL=<模型名>`**（必填）。
 
-| `LLM_PROVIDER` | 需要的 key | 默认模型（2026-08 最新） | 备注 |
-|----------------|-----------|-------------------------|------|
-| `anthropic`（默认） | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5`（2025-09） | Claude 4.5 |
-| `openai` | `OPENAI_API_KEY` | `gpt-5`（2025-08） | GPT-5 旗舰 |
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-v4-flash`（2026-04） | V4 Flash 替代旧 `deepseek-chat` |
+`agent/agent.py` 内置 provider 注册表（每个 provider 提供便捷 base_url + key 名），改 `LLM_PROVIDER` 一行即可切换：
+
+| `LLM_PROVIDER` | 需要的 key | 示例 `LLM_MODEL`（以各平台控制台为准） | 备注 |
+|----------------|-----------|----------------------------------------|------|
+| `anthropic`（默认） | `ANTHROPIC_API_KEY`（或 `ANTHROPIC_MODEL`） | `claude-sonnet-4-5` | Claude 4.5 |
+| `openai` | `OPENAI_API_KEY` | `gpt-5` | GPT-5 旗舰 |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat`（V4） | 走 OpenAI 兼容 API |
 | `openrouter` | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4.5` | 一个 key 路由多 provider |
 | `groq` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | Groq LPU 极速推理 |
-| `moonshot` | `MOONSHOT_API_KEY` | `kimi-k2.5`（2026 新旗舰） | Moonshot / Kimi |
-| `zhipu` | `ZHIPU_API_KEY` | `glm-4.6`（2025-10 开源） | 智谱 GLM-4.6 |
-| `ollama` | 无需 key | `qwen3:14b` | 本地推理（先 `ollama pull qwen3:14b`） |
-| `custom` | `OPENAI_COMPATIBLE_*` | 任意 | 任意 OpenAI 兼容端点 |
+| `moonshot` | `MOONSHOT_API_KEY` | `kimi-k2.5` | Moonshot / Kimi |
+| `zhipu` | `ZHIPU_API_KEY` | `glm-4.6` | 智谱 GLM |
+| `ollama` | 无需 key | `qwen3:14b` | 本地推理（先 `ollama pull <模型名>`） |
+| `custom` | `OPENAI_COMPATIBLE_BASE_URL` + `_API_KEY` + `_MODEL` | 任意 | 任意 OpenAI 兼容端点 |
 
-如需指定其他模型，设置环境变量 `LLM_MODEL=<模型名>` 即可覆盖默认。
+示例（DeepSeek）：
+
+```bash
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-xxxx
+LLM_MODEL=deepseek-chat
+```
+
+缺 `LLM_MODEL` 时程序会 fail-fast 并提示去对应平台查可用模型。
 
 ---
 

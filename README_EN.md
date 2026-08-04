@@ -93,23 +93,35 @@ python examples/run_demo.py
 
 ---
 
-## 🤖 LLM Provider Selection (defaults are **August 2026 latest**)
+## 🤖 LLM Provider Selection (model names are yours to configure)
 
-`agent/agent.py` ships a provider registry. Switch by changing `LLM_PROVIDER` in `.env`:
+> The code ships **no hardcoded default model** (models evolve fast — hardcoding goes stale).
+> Set three things in `.env`: `LLM_PROVIDER=<provider>` + the matching `*_API_KEY` +
+> **`LLM_MODEL=<model-name>` (required)**.
 
-| `LLM_PROVIDER` | Required env var | Default model (Aug 2026) | Notes |
-|----------------|-----------------|-------------------------|-------|
-| `anthropic` (default) | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` (Sep 2025) | Claude 4.5 |
-| `openai` | `OPENAI_API_KEY` | `gpt-5` (Aug 2025) | GPT-5 flagship |
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-v4-flash` (Apr 2026) | V4 Flash replaces legacy `deepseek-chat` |
+`agent/agent.py` ships a provider registry (each provider gives you a convenient `base_url` + key name). Switch by changing `LLM_PROVIDER`:
+
+| `LLM_PROVIDER` | Required env var | Example `LLM_MODEL` (check provider console) | Notes |
+|----------------|-----------------|----------------------------------------------|-------|
+| `anthropic` (default) | `ANTHROPIC_API_KEY` (or `ANTHROPIC_MODEL`) | `claude-sonnet-4-5` | Claude 4.5 |
+| `openai` | `OPENAI_API_KEY` | `gpt-5` | GPT-5 flagship |
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` (V4) | OpenAI-compatible API |
 | `openrouter` | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4.5` | One key, many providers |
 | `groq` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | Groq LPU ultra-fast inference |
-| `moonshot` | `MOONSHOT_API_KEY` | `kimi-k2.5` (new 2026 flagship) | Moonshot / Kimi |
-| `zhipu` | `ZHIPU_API_KEY` | `glm-4.6` (open-sourced Oct 2025) | Zhipu GLM-4.6 |
-| `ollama` | none required | `qwen3:14b` | Local inference (`ollama pull qwen3:14b` first) |
-| `custom` | `OPENAI_COMPATIBLE_*` | any | Any OpenAI-compatible endpoint |
+| `moonshot` | `MOONSHOT_API_KEY` | `kimi-k2.5` | Moonshot / Kimi |
+| `zhipu` | `ZHIPU_API_KEY` | `glm-4.6` | Zhipu GLM |
+| `ollama` | none required | `qwen3:14b` | Local inference (`ollama pull <model>` first) |
+| `custom` | `OPENAI_COMPATIBLE_BASE_URL` + `_API_KEY` + `_MODEL` | any | Any OpenAI-compatible endpoint |
 
-Override any default with `LLM_MODEL=<model-name>`.
+Example (DeepSeek):
+
+```bash
+LLM_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-xxxx
+LLM_MODEL=deepseek-chat
+```
+
+If `LLM_MODEL` is missing, the app fails fast with a hint to check the provider's available models.
 
 ---
 

@@ -34,47 +34,42 @@ SYSTEM_PROMPT = """你是 PayKeeper —— 一个经 KeeperHub 在链上自动�
 
 # OpenAI 兼容 provider 注册表（langchain_openai.ChatOpenAI 只需换 base_url / model）
 # base_url=None 表示用 openai 官方默认端点。
-# 默认模型按 2026-08 各 provider 官方最新发布版本更新。
+# 注意：这里【不】预设 default_model —— 模型名由用户在 .env 的 LLM_MODEL 指定，
+#      避免代码硬编码模型名（模型迭代快，硬编码会过时）。
+#      每个 provider 只提供便捷 base_url 与 API key 环境变量名。
 OPENAI_COMPATIBLE_PROVIDERS: dict[str, dict[str, Any]] = {
     "openai": {
         "base_url": None,
-        "default_model": "gpt-5",
         "env_key": "OPENAI_API_KEY",
         "label": "OpenAI",
     },
     "deepseek": {
         "base_url": "https://api.deepseek.com",
-        "default_model": "deepseek-v4-flash",
         "env_key": "DEEPSEEK_API_KEY",
         "label": "DeepSeek",
     },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
-        "default_model": "anthropic/claude-sonnet-4.5",
         "env_key": "OPENROUTER_API_KEY",
         "label": "OpenRouter",
     },
     "groq": {
         "base_url": "https://api.groq.com/openai/v1",
-        "default_model": "llama-3.3-70b-versatile",
         "env_key": "GROQ_API_KEY",
         "label": "Groq",
     },
     "moonshot": {
         "base_url": "https://api.moonshot.cn/v1",
-        "default_model": "kimi-k2.5",
         "env_key": "MOONSHOT_API_KEY",
         "label": "Moonshot / Kimi",
     },
     "zhipu": {
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "default_model": "glm-4.6",
         "env_key": "ZHIPU_API_KEY",
         "label": "智谱 GLM",
     },
     "ollama": {
         "base_url": "http://localhost:11434/v1",
-        "default_model": "qwen3:14b",
         "env_key": "OLLAMA_API_KEY",
         "optional_key": True,
         "label": "Ollama（本地）",
@@ -88,6 +83,7 @@ def provider_names() -> str:
 
 def build_llm():
     provider = os.getenv("LLM_PROVIDER", "anthropic").lower().strip()
+    # 模型名一律由用户通过 LLM_MODEL（或各 provider 专属 *_MODEL）指定，不做硬编码默认。
     model = os.getenv("LLM_MODEL", "").strip()
 
     if provider == "anthropic":
@@ -98,24 +94,33 @@ def build_llm():
             raise RuntimeError(
                 f"未设置 ANTHROPIC_API_KEY（或把 LLM_PROVIDER 改为 {provider_names()} 之一）"
             )
-        return ChatAnthropic(
-            model=model or "claude-sonnet-4-5", api_key=key, temperature=0
-        )
+        model = model or os.getenv("ANTHROPIC_MODEL", "").strip()
+        if not model:
+            raise RuntimeError(
+                "请设置 LLM_MODEL（或 ANTHROPIC_MODEL）指定 Claude 模型名，"
+                "例如 claude-sonnet-4-5 / claude-opus-4-1（见 platform.anthropic.com）"
+            )
+        return ChatAnthropic(model=model, api_key=key, temperature=0)
 
-    # 任意 OpenAI 兼容端点（自定义）：用 OPENAI_COMPATIBLE_BASE_URL / API_KEY / MODEL
+    # 任意 OpenAI 兼容端点（自定义）：用 OPENAI_COMPATIBLE_BASE_URL / API_KEY / MODEL 完全自配
     if provider == "custom":
         from langchain_openai import ChatOpenAI
 
         base_url = os.getenv("OPENAI_COMPATIBLE_BASE_URL", "").strip()
         key = os.getenv("OPENAI_COMPATIBLE_API_KEY", "").strip()
+        model = model or os.getenv("OPENAI_COMPATIBLE_MODEL", "").strip()
         if not base_url:
             raise RuntimeError(
                 "LLM_PROVIDER=custom 但未设置 OPENAI_COMPATIBLE_BASE_URL（如 https://api.xxx.com/v1）"
             )
         if not key:
             raise RuntimeError("LLM_PROVIDER=custom 但未设置 OPENAI_COMPATIBLE_API_KEY")
+        if not model:
+            raise RuntimeError(
+                "LLM_PROVIDER=custom 但未设置模型名：请设置 LLM_MODEL 或 OPENAI_COMPATIBLE_MODEL"
+            )
         return ChatOpenAI(
-            model=model or os.getenv("OPENAI_COMPATIBLE_MODEL", "").strip() or "gpt-4o",
+            model=model,
             api_key=key,
             base_url=base_url,
             temperature=0,
@@ -132,8 +137,13 @@ def build_llm():
     key = os.getenv(conf["env_key"], "").strip()
     if not key and not conf.get("optional_key"):
         raise RuntimeError(f"LLM_PROVIDER={provider} 但未设置 {conf['env_key']}")
+    if not model:
+        raise RuntimeError(
+            f"LLM_PROVIDER={provider} 未设置模型名：请在 .env 设置 LLM_MODEL="
+            f"<模型名>（可在 {conf['label']} 控制台/文档查看可用模型）"
+        )
     return ChatOpenAI(
-        model=model or conf["default_model"],
+        model=model,
         # Ollama 本地无需真实 key，SDK 需要非空字符串，这里传占位
         api_key=key or "ollama-local",
         base_url=conf["base_url"],
