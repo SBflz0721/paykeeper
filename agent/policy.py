@@ -110,6 +110,17 @@ class PolicyEngine:
         for addr in rule.whitelist:
             if not ADDRESS_RE.match(addr):
                 raise ValueError(f"白名单地址非法（需 0x+40 位 hex）: {addr!r}")
+        # 全开放规则拒绝：白名单为空 且 单笔/每日限额都为 0 = 没有任何限制。
+        # 允许 0=不限制 的规则等于没锁（评审点：公网部署直接裸奔）。
+        if (
+            not rule.whitelist
+            and rule.single_limit_wei <= 0
+            and rule.daily_limit_wei <= 0
+        ):
+            raise ValueError(
+                "规则必须设置至少一项限制：非空白名单、单笔限额或每日限额"
+                "（不允许 0=不限制 的全开放规则）"
+            )
         self._db.execute(
             "INSERT INTO rules (id, name, whitelist, single_limit_wei, daily_limit_wei,"
             " cron, enabled, created_at) VALUES (?,?,?,?,?,?,?,?)",

@@ -57,7 +57,7 @@ python examples/run_demo.py
 
 | Dimension | Implementation |
 |-----------|----------------|
-| **Real execution** | **18** verifiable Sepolia transactions (incl. Gas Sponsorship), not mockups |
+| **Real execution** | **8** verifiable Sepolia transactions (every one linked to Etherscan, incl. Gas Sponsorship), not mockups |
 | **Full risk-control** | Allowlist + per-tx limit + daily cumulative limit (SQLite-backed, enforced before execution) |
 | **Web Dashboard** | FastAPI + vanilla frontend (6 tabs): NL rule creation, manual execution, audit logs, wallet, Provider config, KeeperHub config |
 | **9 LLM providers** | OpenAI-compatible protocol, switch with one env var (Anthropic / OpenAI / DeepSeek / OpenRouter / Groq / Moonshot / Zhipu / Ollama / custom) |
@@ -157,16 +157,17 @@ python examples/workflow_demo.py       # workflow create -> execute -> poll
 `web/` provides a browser UI (FastAPI + vanilla HTML, zero build):
 
 ```bash
-# Secure start: bind to loopback only + set an auth token
-# (this Dashboard can create rules and trigger real on-chain transfers,
-#  so do NOT expose it on 0.0.0.0)
-DASHBOARD_TOKEN=<your-random-token> uvicorn web.app:app --host 127.0.0.1 --port 8000
-# open http://127.0.0.1:8000 (first load asks for DASHBOARD_TOKEN, browser remembers it)
+# Secure start: bind to loopback only (an auth token is auto-generated
+# and printed in the startup log; this Dashboard can create rules and
+# trigger real on-chain transfers, so do NOT expose it on 0.0.0.0)
+uvicorn web.app:app --host 127.0.0.1 --port 8000
+# open http://127.0.0.1:8000 and log in with the token from the startup log
 ```
 
 > Security notes:
 > - **Always bind `127.0.0.1`, not `0.0.0.0`**: this Dashboard can create rules and send real on-chain transfers; exposing it to your LAN hands the wallet to the network.
-> - **Set `DASHBOARD_TOKEN`**: every `/api/*` (except `/health`) requires `Authorization: Bearer <token>`; if unset, auth is disabled (loopback-only use).
+> - **Auth is always on**: every `/api/*` (except `/health`) requires `Authorization: Bearer <token>`. The token comes from `DASHBOARD_TOKEN`; if unset, a random one is generated (persisted to `data/.dashboard_token`, printed in the startup log). For public deployment, always set `DASHBOARD_TOKEN` explicitly.
+> - **Rules must have limits**: creating a rule requires at least one of a non-empty allowlist, a per-tx limit, or a daily limit; totally-unrestricted rules (`0 = unlimited`) are rejected with 422.
 > - **`chain_id` allowlist**: execution only allows chains in `PAYKEEPER_ALLOWED_CHAIN_IDS` (default Sepolia 11155111 / Base Sepolia 84532); mainnet requests are rejected.
 > - **Custom provider needs allowlist**: `/api/provider` custom `base_url` must match `OPENAI_COMPATIBLE_BASE_URL_ALLOWLIST`, otherwise the LLM key could be exfiltrated to an attacker server.
 
@@ -183,7 +184,7 @@ DASHBOARD_TOKEN=<your-random-token> uvicorn web.app:app --host 127.0.0.1 --port 
 
 ## Real On-Chain Transactions (Sepolia, Chain ID `11155111`)
 
-7 of the **18** total real transactions are linked below for direct verification on Etherscan (full log lives locally in `examples/output/transactions_log.md`, which is git-ignored).
+All **8** real on-chain transactions below are directly verifiable on Sepolia Etherscan — every one has a link (additional dev executions exist only in local logs; this table lists only what can be verified from the repo).
 
 | # | Type | Tx Hash | Gas Sponsored | Execution ID |
 |---|------|---------|----------------|---------------|
@@ -194,6 +195,7 @@ DASHBOARD_TOKEN=<your-random-token> uvicorn web.app:app --host 127.0.0.1 --port 
 | 5 | `execute_transfer` | [`0x53399d…5eab`](https://sepolia.etherscan.io/tx/0x53399d71ff2b3151753261a5915259975276148ee68fa8771bc06d81a1b45eab) | — | — |
 | 6 | `execute_transfer` | [`0x610036…c121`](https://sepolia.etherscan.io/tx/0x6100369c0f9eadd208bc281ea64ef2b9e69489531a29ecfdaf17b239a7bbc121) | sponsored | — |
 | 7 | `execute_transfer` (subscription scheduler) | [`0x424af7…ca65`](https://sepolia.etherscan.io/tx/0x424af7e9bba7f1b32aa6395d70839c114184a755bf6593fde746672fa803ca65) | — | `iri3e6q76u1dhfqcdyfjm` |
+| 8 | `execute_transfer` (Dashboard manual) | [`0x65203c…b7`](https://sepolia.etherscan.io/tx/0x65203cb5a6b650865afe672cd109d2724b5982a63eea1f2a417fcc6ecac236b7) | — | — |
 
 ---
 
@@ -299,7 +301,7 @@ paykeeper/
 
 ### 1. Does it execute onchain via KeeperHub?（通过）
 
-- **18 real Sepolia transactions** (7 linked above with full `transactionHash`, `executionId`, `gasUsed`, `sponsored` fields)
+- **8 real Sepolia transactions** (all linked above, each with `transactionHash`, `executionId`, `gasUsed`, `sponsored` fields)
 - Not mockups: every transaction is a real KeeperHub broadcast, verifiable in the browser
 
 ### 2. Use of KeeperHub surfaces（通过）

@@ -57,7 +57,7 @@ python examples/run_demo.py
 
 | 维度 | 实现 |
 |------|------|
-| **真实执行** | **18 笔** Sepolia 链上交易可查（含 Gas Sponsorship），不是 mockup |
+| **真实执行** | **8 笔** Sepolia 链上交易可查（每笔附 Etherscan 链接，含 Gas Sponsorship），不是 mockup |
 | **完整风控层** | 白名单 + 单笔限额 + 每日累计限额（SQLite 持久化，执行前强制校验） |
 | **Web Dashboard** | FastAPI + 原生前端（6 标签页）：NL 建规则、手动执行、审计记录、钱包、Provider 配置、KeeperHub 配置 |
 | **9 个 LLM provider** | OpenAI 兼容协议一行切换（Anthropic / OpenAI / DeepSeek / OpenRouter / Groq / Moonshot / 智谱 / Ollama / 自定义） |
@@ -157,14 +157,15 @@ python examples/workflow_demo.py       # 工作流创建 -> 执行 -> 轮询
 `web/` 提供浏览器界面（FastAPI + 原生 HTML，零构建）：
 
 ```bash
-# 安全启动：只绑本机回环 + 设置鉴权 token（防止同网段任何人建规则 / 转账）
-DASHBOARD_TOKEN=<你的随机 token> uvicorn web.app:app --host 127.0.0.1 --port 8000
-# 打开 http://127.0.0.1:8000（首次访问会要求输入 DASHBOARD_TOKEN，浏览器记住）
+# 安全启动：只绑本机回环（鉴权 token 会自动生成并在启动日志打印，无需手动设置）
+uvicorn web.app:app --host 127.0.0.1 --port 8000
+# 打开 http://127.0.0.1:8000，按启动日志中的 token 登录（浏览器记住）
 ```
 
 > 安全说明：
 > - **务必绑 127.0.0.1 而非 0.0.0.0**：Dashboard 能建规则、触发真实链上转账，暴露到网段等于把钱包交给局域网。
-> - **设置 `DASHBOARD_TOKEN`**：所有 `/api/*`（除 `/health`）要求 `Authorization: Bearer <token>`；未设置则不启用鉴权（仅限本机使用）。
+> - **鉴权始终开启**：所有 `/api/*`（除 `/health`）要求 `Authorization: Bearer <token>`。token 来自 `DASHBOARD_TOKEN` 环境变量；未设置会自动生成随机 token（持久化到 `data/.dashboard_token`，启动日志打印）。公网部署请显式设置 `DASHBOARD_TOKEN`。
+> - **规则必须有限制**：创建规则时必须设置非空白名单、单笔限额或每日限额之一，拒绝 `0=不限制` 的全开放规则（`/api/rules` 直接 422）。
 > - **`chain_id` 白名单**：执行只允许 `PAYKEEPER_ALLOWED_CHAIN_IDS` 内的链（默认仅 Sepolia 11155111 / Base Sepolia 84532），请求方传主网会直接拒绝。
 > - **custom provider 需白名单**：`/api/provider` 的自定义 base_url 必须命中 `OPENAI_COMPATIBLE_BASE_URL_ALLOWLIST`，防止 LLM key 被转发到攻击者服务器。
 
@@ -181,7 +182,7 @@ DASHBOARD_TOKEN=<你的随机 token> uvicorn web.app:app --host 127.0.0.1 --port
 
 ## 真实链上交易记录（Sepolia, Chain ID `11155111`）
 
-以下 7 笔可直接在 Etherscan 验证；累计 **18 笔** 真实交易（完整记录见本地 `examples/output/transactions_log.md`，该目录不入库）。
+以下 **8 笔真实链上交易**全部可直接在 Sepolia Etherscan 验证（每笔都附链接；开发期另有更多执行记录在本地日志，此处只列可核验的）。
 
 | # | 类型 | 交易哈希 | Gas 赞助 | 执行 ID |
 |---|------|---------|---------|---------|
@@ -192,6 +193,7 @@ DASHBOARD_TOKEN=<你的随机 token> uvicorn web.app:app --host 127.0.0.1 --port
 | 5 | `execute_transfer` | [`0x53399d…5eab`](https://sepolia.etherscan.io/tx/0x53399d71ff2b3151753261a5915259975276148ee68fa8771bc06d81a1b45eab) | — | — |
 | 6 | `execute_transfer` | [`0x610036…c121`](https://sepolia.etherscan.io/tx/0x6100369c0f9eadd208bc281ea64ef2b9e69489531a29ecfdaf17b239a7bbc121) | sponsored | — |
 | 7 | `execute_transfer`（订阅调度器） | [`0x424af7…ca65`](https://sepolia.etherscan.io/tx/0x424af7e9bba7f1b32aa6395d70839c114184a755bf6593fde746672fa803ca65) | — | `iri3e6q76u1dhfqcdyfjm` |
+| 8 | `execute_transfer`（Dashboard 手动执行） | [`0x65203c…b7`](https://sepolia.etherscan.io/tx/0x65203cb5a6b650865afe672cd109d2724b5982a63eea1f2a417fcc6ecac236b7) | — | — |
 
 ---
 
@@ -297,7 +299,7 @@ paykeeper/
 
 ### 1. Does it execute onchain via KeeperHub?（通过）
 
-- **18 笔真实 Sepolia 交易**（上表 7 笔附 Etherscan 链接，每笔含 `transactionHash`、`executionId`、`gasUsed`、`sponsored`）
+- **8 笔真实 Sepolia 交易**（上表全部附 Etherscan 链接，每笔含 `transactionHash`、`executionId`、`gasUsed`、`sponsored`）
 - 不是 mockup：全部经 KeeperHub 真实广播，浏览器可验证
 
 ### 2. Use of KeeperHub surfaces（通过）
@@ -347,7 +349,7 @@ PayKeeper 解决一个真实需求：**让任何能说自然语言的人都能�
 | Bounty 材料：教程 | [`docs/TUTORIAL.md`](docs/TUTORIAL.md) |
 | Bounty 材料：上手指引 | [`docs/ONBOARDING_TEARDOWN.md`](docs/ONBOARDING_TEARDOWN.md) |
 | 安全审计 | [`AUDIT_REPORT.md`](AUDIT_REPORT.md) |
-| 交易证据 | 上表 7 笔 Etherscan 链接 + 本地完整日志 |
+| 交易证据 | 上表 8 笔 Etherscan 链接 + 本地完整日志 |
 
 ---
 

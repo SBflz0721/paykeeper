@@ -3,7 +3,7 @@
 - **审计对象**：PayKeeper（KeeperHub Agents Onchain Hackathon 参赛项目）
 - **审计日期**：2026-08-03（修订 2026-08-04）
 - **审计范围**：`agent/`、`examples/`、`docs/`、`.env*`、`requirements.txt`、`mcp_config.json`
-- **审计方式**：静态代码审查 + 真实链上执行验证（18 笔 Sepolia 交易）+ git 敏感信息核查
+- **审计方式**：静态代码审查 + 真实链上执行验证（8 笔仓库内可核验 Sepolia 交易）+ git 敏感信息核查
 
 ---
 
@@ -11,9 +11,9 @@
 
 | 类别 | 结果 |
 |------|------|
-| 真实交易验证 | 通过：18 笔 Sepolia 交易经 KeeperHub 执行成功 |
+| 真实交易验证 | 通过：8 笔仓库内可验证 Sepolia 交易（全部附 Etherscan 链接，见 README）；开发期另有执行记录仅存本地日志 |
 | 敏感信息泄露 | 注意：1 项（`kh_` Key 暴露于对话；已确保不进 git），**建议轮换** |
-| 已修复 bug/漏洞 | **17 项**（B-01~B-07、F-04、S-03~S-11：含 3 高危 + 5 中危安全加固，见第 7 节） |
+| 已修复 bug/漏洞 | **20 项**（B-01~B-07、F-04、S-03~S-14：含安全加固，见第 7、8 节） |
 | 待跟进事项 | 3 项（中/低/信息） |
 
 ---
@@ -99,7 +99,7 @@
 
 ## 5. 遗留风险
 
-- 测试网已累积 18 笔真实交易；主网执行（Gas Sponsorship）尚未做，需用户在主网钱包准备 USDC 后验证。
+- 测试网开发期累计执行多次，仓库内可核验 8 笔（README 全部附 Etherscan 链接）；主网执行（Gas Sponsorship）尚未做，需用户在主网钱包准备 USDC 后验证。
 - 自然语言 Agent（需 LLM key）与 x402 付费工作流实跑尚未验证（代码已就绪，等待用户提供 LLM key 与付费工作流）。
 
 ---
@@ -134,7 +134,7 @@
 | `GET /` | 通过：首页含 6 个 Tab（执行/规则/记录/钱包/Provider/KeeperHub） |
 | `GET/POST /api/provider` | 通过：前端可视化配置 provider，运行时生效，key 脱敏显示 |
 | `POST /api/rules` | 通过：创建规则（白名单/单笔/每日限额） |
-| `POST /api/execute` | 通过：风控拦截（白名单/限额）返回 `rejected` 并记录；合法请求真实上链（第 18 笔 `0x65203c…`，审计 policy->simulate->broadcast） |
+| `POST /api/execute` | 通过：风控拦截（白名单/限额）返回 `rejected` 并记录；合法请求真实上链（可核验交易 `0x65203c…`，审计 policy->simulate->broadcast） |
 | `GET /api/executions` | 通过：全审计记录（含 rejected 原因） |
 | `GET /api/wallet` | 通过：返回 KeeperHub 托管钱包（需 `.env` 配 `WALLET_INTEGRATION_ID`） |
 
@@ -190,3 +190,28 @@
   修复：新增 `X402_MAX_AMOUNT_WEI`（默认 100 USDC）上限 + `X402_ASSET_ALLOWLIST` 资产白名单，
   超限/非白名单资产一律拒绝。
   验证：`maxAmountRequired=999999999999` 返回「超过单笔上限」。
+
+---
+
+## 8. 第四轮审计（2026-08-04，订阅风控 + 鉴权默认值 + 交易可验证性）
+
+外部评审复检发现 3 项，均已修复并测试：
+
+### 严重
+
+- **[S-12] 订阅自动转账未挂风控 = fail-open（已修复）**：`subscription.py` 的 `SubscriptionConfig.policy_engine` 默认为 None，此时到点自动转账**直接执行、白名单限额全跳过**，配置写错就真金白银飞出去。
+  修复（双层 fail-closed）：
+  - `SubscriptionManager.add()` 强制校验——订阅必须带 `policy_engine` + `policy_rule_id`，且对应规则存在并启用，否则拒绝注册（`ValueError`）；
+  - `run_once()` 兜底——即使绕过 add，也拒绝执行未接风控的订阅。
+  验证：无 policy 的 `add()` 抛错；无 policy 的 `run_once()` 抛错。
+
+- **[S-13] Dashboard 鉴权默认关闭 = 公网裸奔（已修复）**：上一轮鉴权仅在显式设置 `DASHBOARD_TOKEN` 时启用，不设置等于没锁；且规则可配 `0=不限制` 全开放。
+  修复：
+  - 鉴权**永远开启**：未设置 `DASHBOARD_TOKEN` 时自动生成随机 token（持久化到 `data/.dashboard_token`，启动日志打印），中间件对所有 `/api/*` 强制 Bearer 校验；
+  - 创建规则必须设置至少一项限制（非空白名单 / 单笔限额 / 每日限额），`0=不限制` 的全开放规则直接 422。
+  验证：无 token 访问 `/api/rules` 返回 401（自动 token 同样生效）；全开放规则创建返回 422。
+
+### 中等
+
+- **[S-14] README 交易数不可验证（已修复）**：README 声称 18 笔但仓库内只有 7 笔有 Etherscan 链接，评审要求每条都能甩出链接。
+  修复：核验仓库 + `policy.db` 执行记录，共有 **8 笔可验证交易**（7 笔来自文档 + 第 8 笔 `0x65203cb5…` 来自 Dashboard 真实执行记录），README 已全部改为「8 笔，每笔附链接」，并注明其余仅存于本地日志、不列入不可核验的计数。

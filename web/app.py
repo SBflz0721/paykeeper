@@ -42,11 +42,28 @@ KEEPERHUB_CONFIG_FILE = DATA_DIR / "keeperhub.json"
 # ----------------------------------------------------------------------
 # 鉴权（Dashboard 必须防住：谁能建规则谁就能转账）
 # ----------------------------------------------------------------------
-# 设置 DASHBOARD_TOKEN 后，所有 /api/*（除 /health）都要求
-#   Authorization: Bearer <DASHBOARD_TOKEN>
-# 未设置时不启用鉴权（仅限本机 127.0.0.1 使用，见 README 启动命令）。
+# 所有 /api/*（除 /health）都要求 Authorization: Bearer <token>。
+# token 来源：DASHBOARD_TOKEN 环境变量；未设置则自动生成并持久化到
+# data/.dashboard_token（启动日志会打印），保证鉴权永远开启、绝不裸奔。
+import secrets  # noqa: E402
+
+
 def dashboard_token() -> str:
-    return os.getenv("DASHBOARD_TOKEN", "").strip()
+    token = os.getenv("DASHBOARD_TOKEN", "").strip()
+    if token:
+        return token
+    token_file = DATA_DIR / ".dashboard_token"
+    try:
+        if token_file.exists():
+            stored = token_file.read_text(encoding="utf-8").strip()
+            if stored:
+                return stored
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        token = secrets.token_urlsafe(24)
+        token_file.write_text(token, encoding="utf-8")
+    except Exception:
+        token = secrets.token_urlsafe(24)  # 持久化失败也保证有 token
+    return token
 
 
 # 自定义 OpenAI 兼容端点 base_url 白名单（防止 /api/provider 把 LLM key 转发到攻击者服务器）
@@ -135,6 +152,14 @@ async def lifespan(app: FastAPI):
     _policy = PolicyEngine()
     _apply_provider_config(_load_provider_config())
     _apply_keeperhub_config(_load_keeperhub_config())
+    # 打印鉴权 token（未显式设置 DASHBOARD_TOKEN 时自动生成）
+    if not os.getenv("DASHBOARD_TOKEN", "").strip():
+        tok = dashboard_token()
+        print("\n" + "=" * 62, flush=True)
+        print("  Dashboard 鉴权已启用（未设置 DASHBOARD_TOKEN，自动生成）", flush=True)
+        print(f"  打开页面后请输入 token: {tok}", flush=True)
+        print(f"  （已持久化到 {DATA_DIR / '.dashboard_token'}，重启不变）", flush=True)
+        print("=" * 62 + "\n", flush=True)
     try:
         yield
     finally:
@@ -153,14 +178,15 @@ app.add_middleware(
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
+    # token 永远存在（未配置 DASHBOARD_TOKEN 会自动生成），鉴权始终开启
     token = dashboard_token()
     path = request.url.path
-    if token and path.startswith("/api/") and path != "/health":
+    if path.startswith("/api/") and path != "/health":
         auth = request.headers.get("Authorization", "")
         if auth != f"Bearer {token}":
             return JSONResponse(
                 status_code=401,
-                content={"ok": False, "error": "未授权：请设置 DASHBOARD_TOKEN 并以 Bearer 方式携带"},
+                content={"ok": False, "error": "未授权：需要 Bearer token（见启动日志或 DASHBOARD_TOKEN）"},
             )
     return await call_next(request)
 

@@ -191,6 +191,21 @@ class SubscriptionManager:
 
     # -- 管理 ----------------------------------------------------------
     def add(self, cfg: SubscriptionConfig) -> str:
+        # fail-closed：订阅必须挂风控（白名单/限额），否则配置写错就真金白银飞出去。
+        # 没有 policy_engine + policy_rule_id 的订阅一律拒绝注册。
+        if cfg.policy_engine is None or not cfg.policy_rule_id:
+            raise ValueError(
+                "订阅必须接入风控：请为 SubscriptionConfig 设置 policy_engine 与 policy_rule_id"
+                "（白名单 + 单笔/每日限额），未配置不允许自动付款。"
+            )
+        try:
+            rule = cfg.policy_engine.get_rule(cfg.policy_rule_id)
+        except Exception as e:  # noqa: BLE001
+            raise ValueError(f"订阅风控规则校验失败: {e}") from e
+        if rule is None:
+            raise ValueError(f"订阅风控规则不存在: {cfg.policy_rule_id}")
+        if not rule["enabled"]:
+            raise ValueError(f"订阅风控规则已禁用: {cfg.policy_rule_id}")
         self._subs[cfg.id] = cfg
         return cfg.id
 
@@ -233,6 +248,11 @@ class SubscriptionManager:
         cfg = self._subs.get(sub_id)
         if not cfg:
             raise KeyError(f"未知订阅: {sub_id}")
+        # fail-closed：兜底校验（add() 已强制，这里防直接构造/绕过）
+        if cfg.policy_engine is None or not cfg.policy_rule_id:
+            raise RuntimeError(
+                f"订阅 {sub_id} 未接入风控，拒绝执行自动付款（配置 policy_engine + policy_rule_id）"
+            )
         due = (due_at or datetime.now(UTC)).astimezone(UTC)
         result = await execute_transfer(
             self.kh,
