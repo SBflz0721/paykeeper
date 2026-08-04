@@ -37,6 +37,7 @@ WEB_DIR = Path(__file__).resolve().parent
 ROOT_DIR = WEB_DIR.parent
 DATA_DIR = ROOT_DIR / "data"
 PROVIDER_CONFIG_FILE = DATA_DIR / "provider.json"
+KEEPERHUB_CONFIG_FILE = DATA_DIR / "keeperhub.json"
 
 # ----------------------------------------------------------------------
 # 全局单例
@@ -104,6 +105,7 @@ async def lifespan(app: FastAPI):
     await _kh.__aenter__()
     _policy = PolicyEngine()
     _apply_provider_config(_load_provider_config())
+    _apply_keeperhub_config(_load_keeperhub_config())
     try:
         yield
     finally:
@@ -159,6 +161,11 @@ class ProviderIn(BaseModel):
     api_key: str = ""
     model: str = ""
     base_url: str = ""
+
+
+class KeeperHubConfigIn(BaseModel):
+    api_key: str = ""
+    wallet_integration_id: str = ""
 
 
 # ----------------------------------------------------------------------
@@ -362,3 +369,65 @@ async def wallet() -> dict:
         return {"wallet": raw}
     except Exception as e:
         raise HTTPException(502, f"查询钱包失败: {e}")
+
+
+# ----------------------------------------------------------------------
+# KeeperHub 配置（前端可视化配置，运行时注入环境变量，不写 .env）
+# ----------------------------------------------------------------------
+def _load_keeperhub_config() -> dict:
+    """读取前端保存的 KeeperHub 配置（data/keeperhub.json），不存在返回空。"""
+    if not KEEPERHUB_CONFIG_FILE.exists():
+        return {}
+    try:
+        return json.loads(KEEPERHUB_CONFIG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _apply_keeperhub_config(cfg: dict) -> None:
+    """把 KeeperHub 配置写入进程环境变量（运行时生效，不修改 .env）。"""
+    api_key = str(cfg.get("api_key", "")).strip()
+    wallet_id = str(cfg.get("wallet_integration_id", "")).strip()
+    if api_key:
+        os.environ["KEEPERHUB_API_KEY"] = api_key
+    if wallet_id:
+        os.environ["WALLET_INTEGRATION_ID"] = wallet_id
+
+
+@app.get("/api/keeperhub-config")
+async def get_keeperhub_config() -> dict:
+    cfg = _load_keeperhub_config()
+    env_key = os.getenv("KEEPERHUB_API_KEY", "")
+    env_wallet = os.getenv("WALLET_INTEGRATION_ID", "")
+    return {
+        "api_key_masked": _mask_key(cfg.get("api_key", "") or env_key),
+        "wallet_integration_id": cfg.get("wallet_integration_id", "") or env_wallet,
+        "has_key": bool(env_key),
+        "has_wallet_id": bool(env_wallet),
+        "needs_restart": bool(cfg),
+    }
+
+
+@app.post("/api/keeperhub-config")
+async def set_keeperhub_config(body: KeeperHubConfigIn) -> dict:
+    api_key = body.api_key.strip()
+    wallet_id = body.wallet_integration_id.strip()
+
+    if not api_key and not wallet_id:
+        raise HTTPException(422, "至少需要填写 API Key 或 Wallet Integration ID 之一")
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    KEEPERHUB_CONFIG_FILE.write_text(
+        json.dumps({
+            "api_key": api_key,
+            "wallet_integration_id": wallet_id,
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    _apply_keeperhub_config(_load_keeperhub_config())
+    return {
+        "ok": True,
+        "api_key_masked": _mask_key(api_key),
+        "wallet_integration_id": wallet_id,
+        "warning": "KeeperHub 连接已在启动时建立。若 API Key 变更，请重启 Dashboard 以使新 Key 生效。",
+    }

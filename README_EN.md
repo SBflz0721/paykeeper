@@ -29,13 +29,14 @@ The video shows three real on-chain capabilities executed sequentially in a sing
 
 | Dimension | Implementation |
 |-----------|----------------|
-| **Real execution** | 16 verifiable Sepolia transactions (incl. Gas Sponsorship), not mockups |
+| **Real execution** | 18+ verifiable Sepolia transactions (incl. Gas Sponsorship), not mockups |
+| **Full risk-control** | Allowlist + per-tx limit + daily cumulative limit (SQLite-backed, enforced before execution) |
+| **Web Dashboard** | FastAPI + vanilla frontend (6 tabs): NL rule creation, manual execution, audit logs, wallet, Provider config, KeeperHub config |
 | **9 LLM providers** | OpenAI-compatible protocol, switch with one env var (Anthropic / OpenAI / DeepSeek / OpenRouter / Groq / Moonshot / Zhipu / Ollama / custom) |
 | **Reliability** | simulate -> idempotent broadcast (**same key reused across retries**, no double-pay) -> exponential backoff -> status polling -> audit trail |
 | **True-timer subscriptions** | `agent/subscription.py` cron scheduler auto-pays on schedule; KeeperHub Schedule workflow as platform-side option |
 | **x402 pay-per-use** | EIP-3009 `TransferWithAuthorization` signing + facilitator domain allowlist |
-| **Audit visibility** | Every execution returns `execution_id`, `transactionHash`, status, audit nodes |
-| **Security** | 6 audit fixes shipped (B-01~B-06, incl. 2 from external review), full report in `AUDIT_REPORT.md` |
+| **Frontend configuration** | Configure LLM provider and KeeperHub keys via the Dashboard UI — runtime env injection, no `.env` editing |
 
 ---
 
@@ -211,11 +212,19 @@ Full audit report in [`AUDIT_REPORT.md`](AUDIT_REPORT.md) (6 bugs fixed, 3 follo
 ```
 paykeeper/
 ├── agent/ # Core modules
-│ ├── keeperhub_mcp.py # KeeperHub MCP client (35 tools)
-│ ├── payments.py # Transfer / contract call / workflow (reliability layer)
-│ ├── subscription.py # True cron subscription scheduler (real timer)
-│ ├── agent.py # LangGraph ReAct Agent + 9-provider registry
-│ └── x402_client.py # EIP-3009 signing + facilitator validation
+│   ├── keeperhub_mcp.py   # KeeperHub MCP client (35 tools)
+│   ├── payments.py        # Transfer / contract call / workflow (reliability layer + risk-control integration)
+│   ├── policy.py           # Full risk-control engine (allowlist / limits / SQLite)
+│   ├── subscription.py    # True cron subscription scheduler (real timer)
+│   ├── agent.py            # LangGraph ReAct Agent + 9-provider registry
+│   └── x402_client.py     # EIP-3009 signing + facilitator validation
+├── web/ # Web Dashboard
+│   ├── app.py              # FastAPI backend (rules / execution / wallet / NL parsing / Provider config / KeeperHub config)
+│   └── templates/index.html   # Vanilla frontend SPA (6 tabs)
+├── data/ # Runtime data (auto-created)
+│   ├── policy.db           # Risk-control rules (SQLite)
+│   ├── provider.json       # LLM Provider frontend config
+│   └── keeperhub.json      # KeeperHub frontend config
 ├── examples/ # Run entry points
 │ ├── run_demo.py # Default: deterministic transfer + NL Agent
 │ ├── full_demo.py # 3 real capabilities chained (recommended)

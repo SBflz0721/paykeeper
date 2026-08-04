@@ -73,6 +73,7 @@
  <button data-tab="logs">执行记录</button>
  <button data-tab="wallet">钱包</button>
  <button data-tab="provider">Provider</button>
+ <button data-tab="keeperhub">KeeperHub</button>
 </nav>
 
 <main>
@@ -178,6 +179,29 @@
  <pre class="result" id="pvCurrent" style="display:block"></pre>
  </div>
  </section>
+
+ <!-- ============ KeeperHub 配置 ============ -->
+ <section id="tab-keeperhub" style="display:none">
+ <div class="panel">
+ <h2>KeeperHub 连接配置 <small>前端可视化配置，运行时注入环境变量，不写 .env</small></h2>
+ <div class="row">
+ <div>
+ <label>KeeperHub API Key（kh_ 前缀）</label>
+ <input id="khKey" type="password" placeholder="kh_...">
+ </div>
+ <div>
+ <label>Wallet Integration ID</label>
+ <input id="khWalletId" placeholder="在 KeeperHub 控制台 Wallet 页面查看">
+ </div>
+ </div>
+ <button class="btn" onclick="saveKeeperHub()">保存配置</button>
+ <div class="msg" id="khMsg"></div>
+ <pre class="result" id="khCurrent" style="display:block"></pre>
+ <div class="msg info" style="display:block;margin-top:10px" id="khWarning">
+ [!] KeeperHub MCP 连接在 Dashboard 启动时建立。若 API Key 变更，请重启 Dashboard 以使新 Key 生效。
+ </div>
+ </div>
+ </section>
 </main>
 
 <script>
@@ -188,13 +212,14 @@ document.querySelectorAll('nav button').forEach(btn => {
  btn.onclick = () => {
  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
  btn.classList.add('active');
- ['exec','rules','logs','wallet','provider'].forEach(t => {
+ ['exec','rules','logs','wallet','provider','keeperhub'].forEach(t => {
  $('tab-'+t).style.display = t === btn.dataset.tab ? '' : 'none';
  });
  if (btn.dataset.tab === 'rules') loadRules();
  if (btn.dataset.tab === 'logs') loadLogs();
  if (btn.dataset.tab === 'wallet') loadWallet();
  if (btn.dataset.tab === 'provider') loadProvider();
+ if (btn.dataset.tab === 'keeperhub') loadKeeperHub();
  };
 });
 
@@ -424,6 +449,40 @@ async function saveProvider() {
  showMsg($('pvMsg'), 'ok', '已保存并生效: ' + data.provider + ' / ' + data.model);
  loadProvider();
  } catch (e) { showMsg($('pvMsg'), 'err', e.message); }
+}
+
+// ---- KeeperHub 配置 ----
+async function loadKeeperHub() {
+ try {
+ const res = await fetch('/api/keeperhub-config');
+ const data = await res.json();
+ $('khKey').value = '';
+ $('khWalletId').value = data.wallet_integration_id || '';
+ $('khCurrent').textContent = JSON.stringify({
+ api_key: data.api_key_masked || '(未设置)',
+ wallet_integration_id: data.wallet_integration_id || '(未设置)',
+ has_key: data.has_key,
+ has_wallet_id: data.has_wallet_id,
+ }, null, 2);
+ $('khWarning').style.display = data.needs_restart ? '' : 'none';
+ hideMsg($('khMsg'));
+ } catch (e) { showMsg($('khMsg'), 'err', '加载失败: ' + e.message); }
+}
+
+async function saveKeeperHub() {
+ const api_key = $('khKey').value.trim();
+ const wallet_id = $('khWalletId').value.trim();
+ if (!api_key && !wallet_id) return showMsg($('khMsg'), 'err', '至少填写一项');
+ try {
+ const res = await fetch('/api/keeperhub-config', {
+ method: 'POST', headers: {'Content-Type':'application/json'},
+ body: JSON.stringify({api_key, wallet_integration_id: wallet_id}),
+ });
+ const data = await res.json();
+ if (!res.ok) throw new Error(data.detail || '保存失败');
+ showMsg($('khMsg'), 'ok', '[OK] 已保存。' + (data.warning || ''));
+ loadKeeperHub();
+ } catch (e) { showMsg($('khMsg'), 'err', e.message); }
 }
 
 // 初始化

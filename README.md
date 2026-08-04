@@ -31,7 +31,7 @@
 |------|------|
 | **真实执行** | Sepolia 上 18+ 笔链上交易可查（含 Gas Sponsorship），不是 mockup |
 | **完整风控层** | 白名单 + 单笔限额 + 每日累计限额（SQLite 持久化，执行前强制校验） |
-| **Web Dashboard** | FastAPI + 原生前端：自然语言建规则、手动执行、审计记录、钱包 |
+| **Web Dashboard** | FastAPI + 原生前端（6 标签页）：NL 建规则、手动执行、审计记录、钱包、Provider 配置、KeeperHub 配置 |
 | **9 个 LLM provider** | OpenAI 兼容协议一行切换（Anthropic / OpenAI / DeepSeek / OpenRouter / Groq / Moonshot / 智谱 / Ollama / 自定义） |
 | **可靠性** | simulate 预飞 -> **重试复用同一幂等键**（防双付）-> 指数退避 -> 状态轮询 -> 审计轨迹 |
 | **真定时器订阅** | `agent/subscription.py` cron 调度器：到点自动付款；KeeperHub Schedule 工作流作平台侧方案 |
@@ -234,6 +234,7 @@ verdict = engine.check(rule_id, "0x...", int(0.01*1e18)) # ok=True/False
 | **执行记录** | 全审计：风控拒绝 / 链上成功 / 失败 + txHash 链接 |
 | **钱包** | 查看 KeeperHub 托管钱包地址（`.env` 配 `WALLET_INTEGRATION_ID`） |
 | **Provider 配置** | 前端可视化配置 LLM provider（选 provider + API Key + 模型名 + base_url），运行时生效，不写 `.env`；`GET/POST /api/provider` |
+| **KeeperHub 配置** | 前端可视化配置 KeeperHub API Key + Wallet Integration ID，运行时注入环境变量，不写 `.env`；`GET/POST /api/keeperhub-config` |
 
 ```bash
 # 启动（需 .env 配好 KeeperHub key；自然语言解析另需任一 LLM key）
@@ -266,8 +267,12 @@ paykeeper/
 │ ├── agent.py # LangGraph ReAct Agent + 9-provider 注册表
 │ └── x402_client.py # EIP-3009 签名 + facilitator 校验
 ├── web/ # Web Dashboard
-│ ├── app.py # FastAPI 后端（规则 / 执行 / 钱包 / NL 解析）
-│ └── templates/index.html # 前端单页 Dashboard
+│   ├── app.py            # FastAPI 后端（规则/执行/钱包/NL解析/Provider配置/KeeperHub配置）
+│   └── templates/index.html  # 前端单页 Dashboard（6 标签页）
+├── data/                 # 运行时数据（自动创建）
+│   ├── policy.db         # 风控规则 SQLite
+│   ├── provider.json     # LLM Provider 前端配置
+│   └── keeperhub.json    # KeeperHub 前端配置
 ├── examples/ # 运行入口
 │ ├── run_demo.py # 默认：确定性转账 + NL Agent
 │ ├── full_demo.py # 3 个真实能力串联（推荐演示）
