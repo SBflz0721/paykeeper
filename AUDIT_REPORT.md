@@ -110,7 +110,7 @@
 
 | 检查项 | 结果 |
 |--------|------|
-| 命令执行投毒 | 通过：仅 `scripts/auto_speed.py` 用 `subprocess.run` 调 ffmpeg（录屏后处理工具，参数固定），非自动投毒 |
+| 命令执行投毒 | 通过：除 `ffmpeg`/`ffprobe` 等本机标准工具外，代码无动态命令组装；未发现投毒风险 |
 | 网络请求目标 | 通过：全部为白名单域名（keeperhub.com / deepseek.com / groq / moonshot / bigmodel / etherscan / github / dorahacks）+ 占位符 |
 | 硬编码密钥 | 通过：代码/文档无真实密钥（`grep sk-/kh_/ghp_/AKIA` 全项目 0 命中） |
 | Base64 载荷 | 通过：仅 `x402_client.py` 的 USDC 合约地址，无编码载荷 |
@@ -119,7 +119,7 @@
 
 ### 6.2 发现并修复的 Bug
 
-- **[B-07] emoji 清理破坏 Python 缩进（已修复）**：批量清理脚本用 `re.sub(r" {2,}", " ", txt)` 折叠了 `full_demo.py` / `gen_demo_html.py` / `auto_speed.py` 的缩进，导致 `IndentationError`。已 `git checkout` 恢复后用「只删 emoji 不折叠空格」的方式重新清理，`py_compile` 全部通过。
+- **[B-07] emoji 清理破坏 Python 缩进（已修复）**：批量清理脚本用 `re.sub(r" {2,}", " ", txt)` 折叠了 `full_demo.py` / `gen_demo_html.py` 的缩进，导致 `IndentationError`。已 `git checkout` 恢复后用「只删 emoji 不折叠空格」的方式重新清理，`py_compile` 全部通过。
 - **[F-04] Dashboard 全局异常处理（已加固）**：新增 `@app.exception_handler(Exception)`，未预期异常返回结构化 JSON 而非裸 500；无效请求返回 422。
 
 ### 6.3 500 internal server error 排查结论

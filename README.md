@@ -274,9 +274,6 @@ paykeeper/
 │   └── DEMO_SCRIPT.md        # 演示视频录制指南
 ├── demo/                     # 演示视频（真实终端录制）
 │   └── paykeeper_demo_final.mp4  # 38s 最终视频
-├── scripts/                  # 辅助工具
-│   ├── gen_demo_html.py      # 终端动画生成器（备用）
-│   └── auto_speed.py         # 录屏自动变速
 ├── AUDIT_REPORT.md           # 安全审计报告
 ├── README.md                 # 中文（本文档）
 ├── README_EN.md              # English

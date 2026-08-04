@@ -274,9 +274,6 @@ paykeeper/
 │   └── DEMO_SCRIPT.md        # Demo video recording guide
 ├── demo/                     # Demo videos (real terminal recording)
 │   └── paykeeper_demo_final.mp4  # 38s final video
-├── scripts/                  # Utility scripts
-│   ├── gen_demo_html.py      # Terminal animation generator (backup)
-│   └── auto_speed.py         # Auto speedup for screen recordings
 ├── AUDIT_REPORT.md           # Security audit report
 ├── README.md                 # 中文
 ├── README_EN.md              # English (this file)
