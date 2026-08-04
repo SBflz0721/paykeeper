@@ -112,17 +112,17 @@ LLM_MODEL=<model-name>       # required; check the provider console
 
 `agent/agent.py` ships a provider registry (each provider gives you a convenient `base_url` + key name). Switch by changing `LLM_PROVIDER`:
 
-| `LLM_PROVIDER` | Required env var | Example `LLM_MODEL` (check provider console) | Notes |
-|----------------|-----------------|----------------------------------------------|-------|
-| `anthropic` (default) | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` | `ANTHROPIC_MODEL` also works |
-| `openai` | `OPENAI_API_KEY` | `gpt-5` | |
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` | OpenAI-compatible API |
-| `openrouter` | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4.5` | One key, many providers |
-| `groq` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | Groq LPU ultra-fast inference |
-| `moonshot` | `MOONSHOT_API_KEY` | `kimi-k2.5` | Moonshot / Kimi |
-| `zhipu` | `ZHIPU_API_KEY` | `glm-4.6` | Zhipu GLM |
-| `ollama` | none required | `qwen3:14b` | Local inference (`ollama pull <model>` first) |
-| `custom` | `OPENAI_COMPATIBLE_BASE_URL` + `_API_KEY` + `_MODEL` | any | Any OpenAI-compatible endpoint |
+| `LLM_PROVIDER` | Required env var | Notes |
+|----------------|-----------------|-------|
+| `anthropic` (default) | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL` also works |
+| `openai` | `OPENAI_API_KEY` | |
+| `deepseek` | `DEEPSEEK_API_KEY` | OpenAI-compatible API |
+| `openrouter` | `OPENROUTER_API_KEY` | One key, many providers |
+| `groq` | `GROQ_API_KEY` | Groq LPU ultra-fast inference |
+| `moonshot` | `MOONSHOT_API_KEY` | Moonshot / Kimi |
+| `zhipu` | `ZHIPU_API_KEY` | Zhipu GLM |
+| `ollama` | none required | Local inference (`ollama pull <model>` first) |
+| `custom` | `OPENAI_COMPATIBLE_BASE_URL` + `_API_KEY` + `_MODEL` | Any OpenAI-compatible endpoint |
 
 If `LLM_MODEL` is missing, the app fails fast with a hint to check the provider's available models.
 
@@ -351,7 +351,6 @@ Use cases: DAO treasury payroll, DeFi auto-subscription (VPN/SaaS delegation), A
 
 - [KeeperHub](https://app.keeperhub.com) — MCP / x402 / audit / wallet infrastructure
 - [DeepSeek](https://platform.deepseek.com) — default LLM, OpenAI-compatible API
-- [Anthropic](https://www.anthropic.com) — Claude 4.5
 - [LangChain / LangGraph](https://www.langchain.com) — ReAct Agent framework
 
 ---

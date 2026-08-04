@@ -102,27 +102,27 @@ python examples/run_demo.py
 
 ### LLM Provider（模型名由你自配，代码不硬编码）
 
-代码**不预设默认模型**（模型迭代快，硬编码会过时）。在 `.env` 设置三件事：
+代码**不预设默认模型**（模型迭代快，硬编码示例很快过时）。在 `.env` 设置三件事：
 
 ```
 LLM_PROVIDER=<provider>      # anthropic | openai | deepseek | openrouter | groq | moonshot | zhipu | ollama | custom
 <对应 *_API_KEY>              # 如 DEEPSEEK_API_KEY=sk-xxx
-LLM_MODEL=<模型名>            # 必填，以各平台控制台为准
+LLM_MODEL=<模型名>            # 必填，请到对应 provider 控制台/文档查当前可用模型
 ```
 
 `agent/agent.py` 内置 provider 注册表（每个 provider 提供便捷 base_url + key 名），改 `LLM_PROVIDER` 一行切换：
 
-| `LLM_PROVIDER` | 需要的 key | 示例 `LLM_MODEL`（以平台控制台为准） | 备注 |
-|----------------|-----------|--------------------------------------|------|
-| `anthropic`（默认） | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` | 也可用 `ANTHROPIC_MODEL` |
-| `openai` | `OPENAI_API_KEY` | `gpt-5` | |
-| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-chat` | 走 OpenAI 兼容 API |
-| `openrouter` | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4.5` | 一个 key 路由多 provider |
-| `groq` | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | Groq LPU 极速推理 |
-| `moonshot` | `MOONSHOT_API_KEY` | `kimi-k2.5` | Moonshot / Kimi |
-| `zhipu` | `ZHIPU_API_KEY` | `glm-4.6` | 智谱 GLM |
-| `ollama` | 无需 key | `qwen3:14b` | 本地推理（先 `ollama pull <模型名>`） |
-| `custom` | `OPENAI_COMPATIBLE_BASE_URL` + `_API_KEY` + `_MODEL` | 任意 | 任意 OpenAI 兼容端点 |
+| `LLM_PROVIDER` | 需要的 key | 备注 |
+|----------------|-----------|------|
+| `anthropic`（默认） | `ANTHROPIC_API_KEY` | 也可用 `ANTHROPIC_MODEL` |
+| `openai` | `OPENAI_API_KEY` | |
+| `deepseek` | `DEEPSEEK_API_KEY` | 走 OpenAI 兼容 API |
+| `openrouter` | `OPENROUTER_API_KEY` | 一个 key 路由多 provider |
+| `groq` | `GROQ_API_KEY` | Groq LPU 极速推理 |
+| `moonshot` | `MOONSHOT_API_KEY` | Moonshot / Kimi |
+| `zhipu` | `ZHIPU_API_KEY` | 智谱 GLM |
+| `ollama` | 无需 key | 本地推理（先 `ollama pull <模型名>`） |
+| `custom` | `OPENAI_COMPATIBLE_BASE_URL` + `_API_KEY` + `_MODEL` | 任意 OpenAI 兼容端点 |
 
 缺 `LLM_MODEL` 时程序会 fail-fast 并提示去对应平台查可用模型。
 
@@ -351,7 +351,6 @@ PayKeeper 解决一个真实需求：**让任何能说自然语言的人都能�
 
 - [KeeperHub](https://app.keeperhub.com) — MCP / x402 / 审计 / 钱包基础设施
 - [DeepSeek](https://platform.deepseek.com) — 默认 LLM，OpenAI 兼容 API
-- [Anthropic](https://www.anthropic.com) — Claude 4.5
 - [LangChain / LangGraph](https://www.langchain.com) — ReAct Agent 框架
 
 ---
