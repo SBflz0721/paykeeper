@@ -1,7 +1,7 @@
 """
 PayKeeper 完整演示（录屏用）：一次进程内串联 3 个真实能力。
 
-演示 1/3  确定性转账      payments.run_subscription_once（simulate→broadcast→poll）
+演示 1/3  确定性转账      payments.run_subscription_once（simulatebroadcastpoll）
 演示 2/3  自然语言 Agent  DeepSeek + LangGraph 经 KeeperHub MCP 查询余额
 演示 3/3  订阅工作流      创建 Manual trigger 工作流并真实执行（web3/transfer-funds）
 
@@ -56,7 +56,7 @@ def get(obj, *keys, default=None):
 
 
 async def demo1_transfer(kh) -> None:
-    p("\n【演示 1/3】确定性转账（simulate 预飞 → 幂等广播 → 状态轮询）")
+    p("\n【演示 1/3】确定性转账（simulate 预飞  幂等广播  状态轮询）")
     p(f"  链 {CHAIN}  ->  {RECIPIENT}  |  {AMOUNT_1} ETH")
     res = await kh_call_transfer(kh, AMOUNT_1)
     p(f"  结果    : {res.get('status', '?')}")
@@ -68,7 +68,7 @@ async def demo1_transfer(kh) -> None:
 
 
 async def kh_call_transfer(kh, amount: str) -> dict:
-    """直接调用 execute_transfer（模拟→广播→轮询），返回报告 dict。"""
+    """直接调用 execute_transfer（模拟广播轮询），返回报告 dict。"""
     from agent import payments
 
     res = await payments.run_subscription_once(
@@ -93,7 +93,7 @@ async def demo2_agent(kh) -> None:
 
 
 async def demo3_workflow(kh) -> None:
-    p("\n【演示 3/3】订阅工作流（创建 Manual 触发工作流 → 真实执行 → 链上确认）")
+    p("\n【演示 3/3】订阅工作流（创建 Manual 触发工作流  真实执行  链上确认）")
     nodes = [
         {
             "id": "trigger-1", "type": "trigger",

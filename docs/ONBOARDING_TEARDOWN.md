@@ -35,11 +35,11 @@ claude mcp add --transport http keeperhub https://app.keeperhub.com/mcp
 ```python
 from langchain_mcp_adapters.client import MultiServerMCPClient
 client = MultiServerMCPClient({
-    "keeperhub": {
-        "url": "https://app.keeperhub.com/mcp",
-        "transport": "streamable_http",
-        "headers": {"Authorization": f"Bearer {API_KEY}"},
-    }
+ "keeperhub": {
+ "url": "https://app.keeperhub.com/mcp",
+ "transport": "streamable_http",
+ "headers": {"Authorization": f"Bearer {API_KEY}"},
+ }
 })
 tools = await client.get_tools()
 ```
@@ -94,7 +94,7 @@ await call("get_direct_execution_status", {"execution_id": exec_id})
 **现状**：`execute_transfer` / `execute_contract_call` 需要组织已配置 wallet integration，否则失败。文档在 MCP 页末尾才提到用 `get_wallet_integration` 确认。
 
 **建议修复**：在"执行你的第一次转账"步骤前加醒目 callout：
-> ⚠️ 首次 `execute_transfer` 前，请确认组织已配置 Wallet Integration（用 `get_wallet_integration` 检查）。未配置会直接报错而非提示。
+> [!] 首次 `execute_transfer` 前，请确认组织已配置 Wallet Integration（用 `get_wallet_integration` 检查）。未配置会直接报错而非提示。
 
 ---
 

@@ -18,7 +18,7 @@
 ## 第 1 步：建账号 + 拿 API Key
 
 1. 打开 https://app.keeperhub.com 注册，**Turnkey 钱包会自动创建**（私钥在硬件安全区，不出硬件边界——你不用管私钥）。
-2. 进入 **Settings → API Keys → Organisation**，创建一个 Key（形如 `kh_xxx`）。
+2. 进入 **Settings -> API Keys -> Organisation**，创建一个 Key（形如 `kh_xxx`）。
 3. 记下这个 Key。
 
 > 提示：开发阶段先在 **Sepolia 测试网** 玩，零成本。需要测试币去 https://sepoliafaucet.com 领。
@@ -45,16 +45,16 @@ cp .env.example .env
 
 ```ini
 KEEPERHUB_API_KEY=kh_你的key
-ANTHROPIC_API_KEY=sk-ant-你的key        # 或 OPENAI_API_KEY + LLM_PROVIDER=openai
-TARGET_CHAIN_ID=11155111                # Sepolia 测试网
-DEMO_RECIPIENT=0x你控制的地址            # 收款方（演示用，换成你自己的地址即可）
-DEMO_AMOUNT=0.01                        # 金额（原生币或 token 的小数）
-DEMO_TOKEN_ADDRESS=                     # 留空=转原生币；填 ERC-20 地址则转该 token
+ANTHROPIC_API_KEY=sk-ant-你的key # 或 OPENAI_API_KEY + LLM_PROVIDER=openai
+TARGET_CHAIN_ID=11155111 # Sepolia 测试网
+DEMO_RECIPIENT=0x你控制的地址 # 收款方（演示用，换成你自己的地址即可）
+DEMO_AMOUNT=0.01 # 金额（原生币或 token 的小数）
+DEMO_TOKEN_ADDRESS= # 留空=转原生币；填 ERC-20 地址则转该 token
 ```
 
 ---
 
-## 第 4 步：跑通第一次真实交易 🚀
+## 第 4 步：跑通第一次真实交易 
 
 ```bash
 python examples/run_demo.py
@@ -70,7 +70,7 @@ python examples/run_demo.py
 交易浏览器: https://sepolia.etherscan.io/tx/0x...
 ```
 
-🎉 **这就是一条经 KeeperHub 真实执行的链上交易。** 把它贴到黑客松提交页即可。
+ **这就是一条经 KeeperHub 真实执行的链上交易。** 把它贴到黑客松提交页即可。
 
 ---
 

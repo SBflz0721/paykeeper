@@ -123,10 +123,14 @@ async def execute_transfer(
     simulate_first: bool = True,
     max_retries: int = 3,
     timeout: int = 120,
+    policy_engine: Any = None,
+    policy_rule_id: str = "",
 ) -> PaymentResult:
     """经 KeeperHub 执行一笔链上转账（原生币或 ERC-20）。
 
-    流程：模拟预飞 -> 幂等广播 -> 轮询状态。
+    流程：风控校验（可选）-> 模拟预飞 -> 幂等广播 -> 轮询状态。
+    policy_engine / policy_rule_id 提供时，执行前强制风控校验
+    （地址格式 / 白名单 / 单笔限额 / 每日累计限额），不通过直接拒绝。
     返回 PaymentResult（含 execution_id / tx_hash / 审计轨迹）。
     """
     trail: list[dict] = []
@@ -137,6 +141,24 @@ async def execute_transfer(
     }
     if token_address:
         base_args["token_address"] = token_address
+
+    # 0) 风控校验（可选，自主支付场景建议开启）
+    if policy_engine is not None:
+        try:
+            if token_address:
+                amount_wei = int(str(amount))
+            else:
+                amount_wei = int(float(str(amount)) * 10**18)
+        except Exception:
+            amount_wei = 0
+        verdict = policy_engine.check(policy_rule_id, to_address, amount_wei)
+        trail.append({"step": "policy", "result": str(verdict), "ts": _now()})
+        if not verdict.ok:
+            return PaymentResult(
+                ok=False, kind="transfer", chain_id=str(chain_id),
+                to_address=to_address, amount=str(amount), token=token_address or "",
+                attempts=1, error=f"风控拦截: {verdict.reason}", audit_trail=trail,
+            )
 
     # 1) 模拟预飞
     if simulate_first:
@@ -182,6 +204,19 @@ async def execute_transfer(
             state = str(_extract(status, "status", default="")).lower()
             terminal_ok = state in ("success", "confirmed", "completed")
             if terminal_ok or tx_hash:
+                # 风控记账：成功执行计入当日累计（用于每日限额）
+                if policy_engine is not None:
+                    try:
+                        amount_wei = (
+                            int(str(amount))
+                            if token_address
+                            else int(float(str(amount)) * 10**18)
+                        )
+                        policy_engine.record_success(
+                            policy_rule_id, to_address, amount_wei, tx_hash
+                        )
+                    except Exception as e:  # 记账失败不影响转账结果
+                        trail.append({"step": "policy_record", "error": str(e), "ts": _now()})
                 return PaymentResult(
                     ok=True, kind="transfer", chain_id=str(chain_id),
                     to_address=to_address, amount=str(amount), token=token_address or "",

@@ -24,7 +24,7 @@ RAW_LINES = [
     ("==============================================================", "banner"),
     ("  Agent 推理与执行中（DeepSeek + KeeperHub MCP）...", "thinking"),
     ("==============================================================", "banner"),
-    ("✅ 转账已完成并上链确认。", "ok"),
+    ("[OK] 转账已完成并上链确认。", "ok"),
     ("", "normal"),
     ("## 转账执行报告", "h1"),
     ("", "normal"),
@@ -118,7 +118,7 @@ HTML_DOC = """<!DOCTYPE html>
   <div class="titlebar">
     <span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span>
     <span class="title">PayKeeper — 自主支付 Agent 经 KeeperHub 链上执行 · Sepolia</span>
-    <button class="btn" id="playBtn" onclick="restart()">▶ 重新播放</button>
+    <button class="btn" id="playBtn" onclick="restart()">重新播放</button>
   </div>
   <div class="screen" id="screen"></div>
   <div class="bar">
