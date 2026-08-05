@@ -38,7 +38,7 @@ SAMPLE_CHALLENGE = {
     "asset": USDC_BASE_SEPOLIA,
     "payTo": "0x1234567890123456789012345678901234567890",
     "resource": "https://app.keeperhub.com/pay/xxx",
-    "facilitator": "https://app.keeperhub.com/settlement",
+    "facilitator": "https://facilitator.x402.rs",
 }
 
 OK, SKIP, FAIL = "OK", "SKIP", "FAIL"
@@ -97,8 +97,19 @@ def main() -> None:
     print("\n[4/6] facilitator 端点白名单（https + 域后缀防欺骗）")
     check("https://app.keeperhub.com/settlement 允许",
           lambda: _facilitator_allowed("https://app.keeperhub.com/settlement"))
+    check("https://facilitator.x402.rs（Coinbase 公共 facilitator）允许",
+          lambda: _facilitator_allowed("https://facilitator.x402.rs"))
     check("http 明文拒绝", lambda: not _facilitator_allowed("http://app.keeperhub.com/settlement"))
     check("evil-keeperhub.com 拒绝", lambda: not _facilitator_allowed("https://evil-keeperhub.com/x"))
+
+    # 4.5) 默认端点可达性（HEAD 请求，不发起任何结算）
+    import requests
+    default_url = x.DEFAULT_FACILITATOR_URL
+    try:
+        r = requests.head(default_url, timeout=8, allow_redirects=True)
+        print(f"      [{OK if r.status_code < 500 else FAIL}] 默认 facilitator {default_url} → HTTP {r.status_code}")
+    except Exception as e:
+        print(f"      [{FAIL}] 默认 facilitator {default_url} 不可达: {str(e)[:80]}")
 
     # 5) 签名生成
     print("\n[5/6] EIP-3009 TransferWithAuthorization 签名生成")

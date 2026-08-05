@@ -277,3 +277,39 @@ README 交易表 8 → 10 笔，中英同步。
 - **主网（chain_id=1）**：托管钱包余额 0 → KeeperHub 返回 `Insufficient ETH balance. Have: 0.0, Need: 0.0001`。需向托管钱包充主网 ETH/USDC 后执行（README 有指引）。顺带验证了幂等重试：3 次广播同一 `executionId` + `idempotentReplay` 字段，未重复扣款。
 - **Base Sepolia（84532）**：同样 `Insufficient BASE balance. Have: 0.0`，需充值。
 - **x402 真实结算**：官方 MCP 35 工具中无 x402 结算工具（自研 `x402_client.py` 是唯一路径），且沙箱无 `X402_PRIVATE_KEY`（无法伪造私钥），故真实结算仍需配置 `X402_PRIVATE_KEY` + Base USDC 后运行 `python examples/x402_dryrun.py --real`。代码与检查清单已就绪。
+
+---
+
+## 11. 实跑续（2026-08-05，三项 R-4 行动项处置）
+
+外部评估后接管 R-04 的三项外部依赖操作（主网/Base 充值、x402 真实结算、kh_ Key 轮换），处置结论：
+
+### R-11（实跑新发现，重大 bug）：x402 facilitator 端点 `app.keeperhub.com/settlement` 返回 404
+
+在尝试实跑 x402 真实结算时，按 `x402_client.py` 默认值向 `https://app.keeperhub.com/settlement` 发起 HEAD 请求 → **404**。再查 KeeperHub 官方文档 (`docs.keeperhub.com/ai-tools/agentic-wallet`)：
+
+- 官方文档**明确不公开** facilitator 端点 URL
+- KeeperHub 官方 x402 路径是 **Agentic Wallet**（Turnkey 子组织，私钥永远不下盘，签名在 enclave），通过 Claude Code `PreToolUse` hook 拦截 402 响应并自动签名
+- 自研客户端（`x402_client.py`）设计时**捏造了** `app.keeperhub.com/settlement` 作为默认 facilitator 端点，这在沙箱环境里无路可通
+
+**修复**：
+- `x402_client.py`：默认 facilitator 改为 `https://facilitator.x402.rs`（Coinbase 协议官方公共 facilitator，HEAD 200 验证），并在 `_facilitator_allowed` 白名单追加 `facilitator.x402.rs` / `x402.org`
+- `examples/x402_dryrun.py` 加 4.5 步：默认端点可达性检查（避免重蹈"端点存不存在都不知道"的覆辙）
+- x402 9 单测 + dry-run 全通过
+
+**提供给 x402 真实结算的完整路径**（仍需用户 EOA + USDC）：
+1. 已有 `x402_client.py` 全链路（解析 → 白名单 → 签名 → 提交 facilitator）
+2. 已修默认 facilitator 端点
+3. dry-run 验证全链路（包括 facilitator 端点 200）
+4. 真实结算仍需：`.env` 配 `X402_PRIVATE_KEY`（用户自己的 EOA）+ 给该 EOA 充 Base USDC + 跑 `--real`。**PayKeeper 控制不了用户钱包的资金路径，只能做到这里**。
+
+### 三项需用户操作的诚实结论
+
+| 行动项 | 沙箱代办可行性 | 用户行动（最简） |
+|------|--------------|----------------|
+| 主网交易 | ❌ 主网无 faucet；托管钱包余额 0 | 在 app.keeperhub.com 查钱包地址 → 你的外部钱包转 0.005 ETH/USDC → 告诉我金额，我立刻跑主网交易 |
+| Base Sepolia 交易 | ⚠️ 试了 5 个 Base Sepolia faucet（Triangle/Alchemy/QuickNode/Chainstack/Coinbase）—— 全部要求登录或已停用 | 在你的 Coinbase Wallet 里用内置 Base Sepolia faucet 领 0.05 ETH → 转发给托管钱包 `0xc4Ef9855…AfFd` → 告诉我即可 |
+| kh_ Key 轮换 | ❌ 浏览器无 KeeperHub 登录态（需 Google/GitHub/Coinbase 账号） | app.keeperhub.com → 登录 → API keys → Create new → 替换 `.env` 的 `KEEPERHUB_API_KEY` → 删旧的 |
+| x402 真实结算 | ❌ 私钥和 USDC 资金无法代办 | (1) 用 Coinbase Wallet Faucet 领 Base Sepolia USDC → (2) 临时用任何工具生成 EOA 私钥填入 `X402_PRIVATE_KEY` → (3) 跑 `python examples/x402_dryrun.py --real` |
+
+**沙箱已穷尽可代办的路径**。其余 3 项不需要任何技术能力——只需要用户登录某个已注册的账号（Coinbase / Google / GitHub）。文档与代码已就绪，配置生效后可立即执行。

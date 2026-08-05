@@ -229,17 +229,21 @@ request -> [1] simulate=true pre-flight -> [2] idempotent broadcast -> [3] statu
 - **Audit trail**: every execution returns full `audit_trail` (simulate / broadcast / confirm nodes)
 - **x402 facilitator allowlist**: HTTPS-only + suffix allowlist (default `keeperhub.com` only — anti-phishing)
 
-### x402 / MPP pay-per-use (code ready — live-settlement checklist)
+### x402 / MPP pay-per-use (code ready — facilitator endpoint fixed, live-settlement checklist)
 
-`agent/x402_client.py` ships a complete x402 client (EIP-3009 `TransferWithAuthorization` signing + challenge parsing + asset/amount/facilitator triple allowlist). Before submission, run one **real settlement** and paste the tx hash into the transaction table:
+`agent/x402_client.py` ships a complete x402 client (EIP-3009 `TransferWithAuthorization` signing + challenge parsing + asset/amount/facilitator triple allowlist).
+
+> **Live-run finding (2026-08-05)**: the original default facilitator endpoint `https://app.keeperhub.com/settlement` returns **404** (KeeperHub docs don't publish such an endpoint; their official x402 path is the Agentic Wallet with Turnkey-enclave signing). Fixed to the Coinbase-protocol public facilitator **`https://facilitator.x402.rs`** (HEAD 200 verified). Override with `X402_FACILITATOR_URL` if needed.
+
+Before submission, run one **real settlement** and paste the tx hash into the transaction table:
 
 ```bash
-# 1) Offline checklist first — no private key needed
+# 1) Offline checklist first — allowlists + default endpoint reachability (no private key)
 python examples/x402_dryrun.py
 
 # 2) Prepare the real environment (.env)
-X402_PRIVATE_KEY=<EOA private key>          # fund a little USDC on Base Sepolia
-X402_FACILITATOR_URL=https://app.keeperhub.com/settlement   # verify against docs.keeperhub.com
+X402_PRIVATE_KEY=<EOA private key>          # fund a little USDC on Base (mainnet or Sepolia)
+X402_FACILITATOR_URL=https://facilitator.x402.rs   # default already points here, no need to set
 
 # 3) Real settlement (a few cents)
 python examples/x402_dryrun.py --real

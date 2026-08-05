@@ -226,17 +226,21 @@ uvicorn web.app:app --host 127.0.0.1 --port 8000
 - **审计轨迹**：每次执行回传完整 `audit_trail`（simulate / broadcast / confirm 节点）
 - **x402 facilitator 白名单**：强制 HTTPS + 后缀白名单（默认仅 `keeperhub.com`，防钓鱼）
 
-### x402 / MPP 按次付费（代码就绪，实跑指引）
+### x402 / MPP 按次付费（代码就绪，facilitator 端点已修正，实跑指引）
 
-`agent/x402_client.py` 实现了完整的 x402 客户端（EIP-3009 `TransferWithAuthorization` 签名 + challenge 解析 + 资产/金额/facilitator 三重白名单）。提交前请完成一次**真实结算**把交易哈希写入 README：
+`agent/x402_client.py` 实现了完整的 x402 客户端（EIP-3009 `TransferWithAuthorization` 签名 + challenge 解析 + 资产/金额/facilitator 三重白名单）。
+
+> **2026-08-05 实跑发现**：原默认 facilitator 端点 `https://app.keeperhub.com/settlement` 返回 **404**（KeeperHub 官方文档不公开该端点，官方 x402 走 Agentic Wallet / Turnkey enclave 签名路径）。已修正为 Coinbase 协议公共 facilitator **`https://facilitator.x402.rs`**（HEAD 200 验证通过），可用 `X402_FACILITATOR_URL` 覆盖。
+
+提交前请完成一次**真实结算**把交易哈希写入 README：
 
 ```bash
-# 1) 先跑离线检查清单，确认白名单/解析链路（不需要私钥）
+# 1) 先跑离线检查清单，验证白名单/解析链路 + 默认端点可达性（不需要私钥）
 python examples/x402_dryrun.py
 
 # 2) 准备实跑环境（.env）
-X402_PRIVATE_KEY=<EOA 私钥>            # 需在 Base Sepolia 充少量 USDC
-X402_FACILITATOR_URL=https://app.keeperhub.com/settlement   # 以 docs.keeperhub.com 为准
+X402_PRIVATE_KEY=<EOA 私钥>            # 需在 Base 充少量 USDC（主网 x402 或 Base Sepolia）
+X402_FACILITATOR_URL=https://facilitator.x402.rs   # 默认已指向该端点，无需设置
 
 # 3) 真实结算（几十美分即可）
 python examples/x402_dryrun.py --real

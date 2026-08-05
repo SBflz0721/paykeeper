@@ -26,6 +26,9 @@ DEFAULT_ASSET_ALLOWLIST = {USDC_BASE.lower(), USDC_BASE_SEPOLIA.lower()}
 # 单笔 x402 支付上限（wei / 最小精度）。默认 100 USDC（1e8 对 6 位小数 = 100 * 1e6）。
 # 可用 X402_MAX_AMOUNT_WEI 覆盖；超过上限的 challenge 一律拒绝，绝不「全额信任」。
 DEFAULT_MAX_AMOUNT_WEI = 100 * 10**6
+# 公共 x402 facilitator 端点（Coinbase 协议开放生态）。历史默认 https://app.keeperhub.com/settlement
+# 经核验返回 404（非真实端点），改为 Coinbase 维护的公共 facilitator。可通过 X402_FACILITATOR_URL 覆盖。
+DEFAULT_FACILITATOR_URL = "https://facilitator.x402.rs"
 EIP3009_TYPE = {
     "TransferWithAuthorization": [
         {"name": "from", "type": "address"},
@@ -126,8 +129,8 @@ def sign_eip3009(
 def _facilitator_allowed(url: str) -> bool:
     """校验 facilitator 端点，防止 402 challenge 被恶意/劫持工作流用来钓鱼签名。
 
-    规则：必须 https，且 host 落在允许名单（默认 keeperhub.com 域；可用
-    X402_FACILITATOR_ALLOWLIST 追加，逗号分隔）。
+    规则：必须 https，且 host 落在允许名单（默认 keeperhub.com 域 + public facilitator
+    `facilitator.x402.rs`；可用 X402_FACILITATOR_ALLOWLIST 追加，逗号分隔）。
     """
     from urllib.parse import urlparse
 
@@ -141,6 +144,9 @@ def _facilitator_allowed(url: str) -> bool:
     allowlist = [h.strip().lower() for h in os.getenv("X402_FACILITATOR_ALLOWLIST", "").split(",") if h.strip()]
     allowlist.append("keeperhub.com")
     allowlist.append("app.keeperhub.com")
+    # 公共 x402 facilitator 开放生态（Coinbase 协议）
+    allowlist.append("facilitator.x402.rs")
+    allowlist.append("x402.org")
     return any(host == a or host.endswith("." + a) for a in allowlist)
 
 
@@ -191,7 +197,11 @@ def settle(challenge: dict) -> dict:
             asset=asset,
             chain_id=chain_id,
         )
-        facilitator = challenge.get("facilitator") or os.getenv("X402_FACILITATOR_URL")
+        facilitator = (
+            challenge.get("facilitator")
+            or os.getenv("X402_FACILITATOR_URL")
+            or DEFAULT_FACILITATOR_URL
+        )
         if not facilitator:
             return {"ok": False, "error": "缺少 facilitator 端点（challenge 未提供，且未设 X402_FACILITATOR_URL）"}
         if not _facilitator_allowed(facilitator):
