@@ -1,5 +1,9 @@
 # PayKeeper
 
+<p align="center">
+  <img src="assets/paykeeper_480.png" alt="PayKeeper — Intelligent. Secure. On-Chain." width="480">
+</p>
+
 > 用一句自然语言，让 AI Agent 经 KeeperHub 在链上自动完成付款、订阅与按次付费——每一步都可审计。
 
 [![GitHub repo size](https://img.shields.io/github/repo-size/SBflz0721/paykeeper)](https://github.com/SBflz0721/paykeeper)
