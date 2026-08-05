@@ -65,7 +65,9 @@ tools = await client.get_tools()
 
 ## 卡点 3：Gas Sponsorship 仅主网 + 测试网资格未说明
 
-**现状**：黑客松强调"working transaction"，但 Gas Sponsorship 只在**主网 Ethereum** 提供；主网执行需要真实 ETH/USDC。文档未说明提交是否接受测试网（Sepolia）交易。
+**现状**：黑客松强调"working transaction"，官方文档口径是 Gas Sponsorship 面向**主网 Ethereum**；主网执行需要真实 ETH/USDC。文档未说明提交是否接受测试网（Sepolia）交易。
+
+**实测注记（2026-08-03）**：PayKeeper 在 **Sepolia** 执行工作流/转账时，KeeperHub 返回的广播响应中确实携带 `sponsored: true`（见 `examples/output/transactions_log.md` 记录），说明测试网链路亦可获得赞助字段；但官方支持范围以 docs.keeperhub.com 为准，README 已注明该字段来源为执行时返回。
 
 **影响**：新手在"花真钱上主网"和"用免费测试网但不确定认不认可"之间纠结，拖慢决策。
 

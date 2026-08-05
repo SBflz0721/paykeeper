@@ -180,20 +180,29 @@ async def _wrap_policy_tool(
         # 金额解析（fail-closed）+ 收款地址
         to_address = kwargs.get("to_address") or kwargs.get("toAddress") or ""
         token_address = kwargs.get("token_address") or kwargs.get("tokenAddress")
-        amount = str(kwargs.get("amount", ""))
+        # 金额来源：amount（转账）/ amount_hint（合约调用显式声明金额，计入每日限额）
+        amount = str(
+            kwargs.get("amount")
+            or kwargs.get("amount_hint")
+            or kwargs.get("value")
+            or ""
+        )
         if not ADDRESS_RE.match(to_address):
             return {"ok": False, "error": f"风控拦截: 收款地址格式非法 {to_address!r}"}
         amount_wei, parse_err = _amount_to_wei(amount, token_address)
         if parse_err:
-            return {"ok": False, "error": f"风控拦截: {parse_err}"}
+            hint = "（合约调用请显式传 amount_hint 以计入每日限额）" if name != "execute_transfer" else ""
+            return {"ok": False, "error": f"风控拦截: {parse_err}{hint}"}
 
         verdict = policy_engine.check(policy_rule_id, to_address, amount_wei)
         if not verdict.ok:
             return {"ok": False, "error": f"风控拦截: {verdict.reason}"}
 
         result = await original(**kwargs)
-        # 记账（仅 execute_transfer 类成功时；contract call 无法可靠推算金额，跳过记账）
-        if name == "execute_transfer" and policy_engine is not None:
+        # 记账：所有带金额的资金工具成功执行后统一计入当日累计（每日限额生效）。
+        # execute_contract_call 通过 amount_hint 显式声明金额；不传金额则被上方
+        # fail-closed 拦截，不存在"绕过记账"的路径（P1-8）。
+        if policy_engine is not None:
             try:
                 flat = result if isinstance(result, dict) else {}
                 tx_hash = str(flat.get("tx_hash") or flat.get("txHash") or "")

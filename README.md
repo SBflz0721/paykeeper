@@ -168,6 +168,8 @@ uvicorn web.app:app --host 127.0.0.1 --port 8000
 > - **规则必须有限制**：创建规则时必须设置非空白名单、单笔限额或每日限额之一，拒绝 `0=不限制` 的全开放规则（`/api/rules` 直接 422）。
 > - **`chain_id` 白名单**：执行只允许 `PAYKEEPER_ALLOWED_CHAIN_IDS` 内的链（默认仅 Sepolia 11155111 / Base Sepolia 84532），请求方传主网会直接拒绝。
 > - **custom provider 需白名单**：`/api/provider` 的自定义 base_url 必须命中 `OPENAI_COMPATIBLE_BASE_URL_ALLOWLIST`，防止 LLM key 被转发到攻击者服务器。
+> - **`kh_` API Key 视为高敏资产**：本仓库历史审计中曾有一次 Key 出现在对话记录（AUDIT S-01），**建议在 app.keeperhub.com 立即轮换**，并定期（如每月）轮换；Key 只放 `.env`，禁止提交、禁止通过前端保存。
+> - **主网与 Gas Sponsorship**：本项目默认白名单仅含测试网，防止误触主网。要提交"主网 + 赞助 gas"证据链：在 `.env` 将 `PAYKEEPER_ALLOWED_CHAIN_IDS` 追加主网 chain id（Ethereum=1 / Base=8453），给 KeeperHub 托管钱包充少量 ETH/USDC，然后正常执行任意转账——KeeperHub 会在主网自动应用 Gas Sponsorship，审计记录含 `sponsored:true`。
 
 | 标签页 | 功能 |
 |--------|------|
@@ -195,6 +197,10 @@ uvicorn web.app:app --host 127.0.0.1 --port 8000
 | 7 | `execute_transfer`（订阅调度器） | [`0x424af7…ca65`](https://sepolia.etherscan.io/tx/0x424af7e9bba7f1b32aa6395d70839c114184a755bf6593fde746672fa803ca65) | — | `iri3e6q76u1dhfqcdyfjm` |
 | 8 | `execute_transfer`（Dashboard 手动执行） | [`0x65203c…b7`](https://sepolia.etherscan.io/tx/0x65203cb5a6b650865afe672cd109d2724b5982a63eea1f2a417fcc6ecac236b7) | — | — |
 
+> **关于 `sponsored` 列**：标注的是**执行时 KeeperHub 返回的 `sponsored: true` 字段**（2026-08-03 记录，见本地 `examples/output/transactions_log.md`），非本仓库推断。官方文档称 Gas Sponsorship 面向主网 Ethereum，测试网是否实际赞助以执行时返回为准；`—` 表示该笔返回中未出现该字段。
+>
+> **交易数口径**：以上 8 笔为本仓库可核验的全部链上交易（7 笔文档记录 + 1 笔 Dashboard 执行记录），另有更早期会话中的数笔仅存于本地日志、未计入可核验清单。
+
 ---
 
 ## 可靠性与安全性
@@ -215,6 +221,24 @@ uvicorn web.app:app --host 127.0.0.1 --port 8000
 - **状态轮询**：等待 `success | completed | failed | reverted` 终态
 - **审计轨迹**：每次执行回传完整 `audit_trail`（simulate / broadcast / confirm 节点）
 - **x402 facilitator 白名单**：强制 HTTPS + 后缀白名单（默认仅 `keeperhub.com`，防钓鱼）
+
+### x402 / MPP 按次付费（代码就绪，实跑指引）
+
+`agent/x402_client.py` 实现了完整的 x402 客户端（EIP-3009 `TransferWithAuthorization` 签名 + challenge 解析 + 资产/金额/facilitator 三重白名单）。提交前请完成一次**真实结算**把交易哈希写入 README：
+
+```bash
+# 1) 先跑离线检查清单，确认白名单/解析链路（不需要私钥）
+python examples/x402_dryrun.py
+
+# 2) 准备实跑环境（.env）
+X402_PRIVATE_KEY=<EOA 私钥>            # 需在 Base Sepolia 充少量 USDC
+X402_FACILITATOR_URL=https://app.keeperhub.com/settlement   # 以 docs.keeperhub.com 为准
+
+# 3) 真实结算（几十美分即可）
+python examples/x402_dryrun.py --real
+```
+
+> 字段契约以 [docs.keeperhub.com/ai-tools/agentic-wallet](https://docs.keeperhub.com) 线上为准；首次实跑如遇 402 body 字段差异，按 `extract_challenge` 的容错结构校准。结算成功后把 `settlement` 里的交易哈希追加到上方交易表并标 `x402` 类型。
 
 ### 真定时器订阅
 
@@ -242,6 +266,15 @@ uvicorn web.app:app --host 127.0.0.1 --port 8000
 - **记账**：成功执行自动计入当日累计，用于每日限额
 - **集成**：`execute_transfer(policy_engine=..., policy_rule_id=...)` 执行前校验、成功后记账，审计轨迹含 `policy` 节点
 - 测试覆盖：8/8 单元测试 + 5/5 集成测试
+
+### 运行测试（离线，无需 KeeperHub key）
+
+```bash
+pip install pytest
+python -m pytest tests/ -q   # 46 用例全通过（风控 / 金额解析 / cron / 订阅幂等 / x402 / Agent 包装器）
+```
+
+全部测试不触碰网络与 KeeperHub：风控引擎用 `:memory:` SQLite，Agent 包装器用 fake tool 验证「风控拦截时底层工具绝不被调用」。
 
 ### 安全审计
 
@@ -276,7 +309,14 @@ paykeeper/
 │   ├── subscription_demo.py  # 订阅调度器演示（run_once + --wait 定时触发）
 │   ├── transfer_demo.py      # 仅转账
 │   ├── video_demo.py         # 单次 NL Agent（紧凑叙事）
-│   └── workflow_demo.py      # 工作流创建 -> 执行 -> 轮询
+│   ├── workflow_demo.py      # 工作流创建 -> 执行 -> 轮询（同名查重复用）
+│   └── x402_dryrun.py        # x402 按次付费离线检查清单（--real 真实结算）
+├── tests/                    # 离线测试套件（46 用例，pytest 全通过，无需 kh key）
+│   ├── test_policy.py        # 风控引擎 10 用例
+│   ├── test_payments.py      # 金额 fail-closed + 链白名单 5 用例
+│   ├── test_subscription.py  # cron 9 用例 + 订阅幂等/fail-closed 5 用例
+│   ├── test_x402_client.py   # facilitator/资产/金额白名单 9 用例
+│   └── test_agent_wrapper.py # Agent 资金工具包装器 8 用例（fake tool）
 ├── docs/                     # 文档（Bounty 材料 + 视频指南）
 │   ├── TUTORIAL.md           # 从零到第一次 KeeperHub 交易
 │   ├── ONBOARDING_TEARDOWN.md # 上手指引 5 大痛点 + 改进建议

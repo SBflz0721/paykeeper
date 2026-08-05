@@ -54,6 +54,7 @@ async def main() -> None:
     amount = os.getenv("DEMO_AMOUNT", "0.0001")
     trigger_kind = os.getenv("WORKFLOW_TRIGGER", "manual").lower()
     cron = os.getenv("WORKFLOW_CRON", "0 0 1 * *")  # 每月 1 号 0 点（默认）
+    cleanup = os.getenv("WORKFLOW_CLEANUP", "").lower() in ("1", "true", "yes")
 
     if not recipient or recipient.startswith("0x0000"):
         print("[跳过] 请在 .env 设置 DEMO_RECIPIENT")
@@ -96,22 +97,46 @@ async def main() -> None:
     edges = [{"id": "edge-1", "source": "trigger-1", "target": "transfer-1"}]
 
     async with KeeperHubMCP() as kh:
-        # 1) 创建
-        print("== 1) create_workflow ==")
-        created = await kh.call_tool(
-            "create_workflow",
-            {
-                "name": f"PayKeeper - Subscription Payment ({chain})",
-                "description": "PayKeeper demo: manual-triggered subscription payment via web3/transfer-funds.",
-                "nodes": nodes,
-                "edges": edges,
-            },
-        )
-        print(json.dumps(flatten(created), indent=2, ensure_ascii=False)[:800])
-        wf_id = str(get(created, "id", "workflowId", default="") or "")
-        if not wf_id:
-            print("创建失败，未拿到 workflow id。")
+        wf_name = f"PayKeeper - Subscription Payment ({chain})"
+
+        # 0) 清理模式：删除同名工作流（F-01：避免长期运行堆积）
+        if cleanup:
+            listed = await kh.list_workflows()
+            deleted = 0
+            for w in flatten(listed).get("workflows") or []:
+                if w.get("name") == wf_name:
+                    await kh.call_tool("delete_workflow", {"workflowId": w["id"]})
+                    deleted += 1
+                    print(f"已删除工作流 {w['id']} ({wf_name})")
+            print(f"清理完成，共删除 {deleted} 个同名工作流。")
             return
+
+        # 1) 创建（查重：同名工作流已存在则复用，避免重复堆积）
+        print("== 1) create_workflow（同名先查重复用）==")
+        listed = await kh.list_workflows()
+        existing = None
+        for w in flatten(listed).get("workflows") or []:
+            if w.get("name") == wf_name:
+                existing = w
+                break
+        if existing:
+            wf_id = str(existing.get("id", ""))
+            print(f"已存在同名工作流，复用: {wf_id}")
+        else:
+            created = await kh.call_tool(
+                "create_workflow",
+                {
+                    "name": wf_name,
+                    "description": "PayKeeper demo: manual-triggered subscription payment via web3/transfer-funds.",
+                    "nodes": nodes,
+                    "edges": edges,
+                },
+            )
+            print(json.dumps(flatten(created), indent=2, ensure_ascii=False)[:800])
+            wf_id = str(get(created, "id", "workflowId", default="") or "")
+            if not wf_id:
+                print("创建失败，未拿到 workflow id。")
+                return
 
         # 2) 校验
         print("\n== 2) validate_workflow ==")

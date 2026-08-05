@@ -170,7 +170,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PayKeeper Dashboard", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 本地演示用；生产请收紧
+    # Dashboard 只服务本机（README 要求绑 127.0.0.1），同源请求不受 CORS 影响；
+    # 收紧 origin 防止恶意网页借浏览器跨域调用本机 API（P2-11）。
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -294,11 +296,20 @@ async def list_rules() -> list[dict]:
 
 @app.post("/api/rules")
 async def create_rule(body: RuleIn) -> dict:
+    from decimal import Decimal, InvalidOperation
+
+    def eth_to_wei(v: float) -> int:
+        """float -> wei 用 Decimal 转换，避免 float 精度误差（与 policy 内部一致）。"""
+        try:
+            return int(Decimal(str(v)) * Decimal(10) ** 18)
+        except (InvalidOperation, ValueError, TypeError):
+            raise HTTPException(422, f"金额非法: {v!r}")
+
     rule = PolicyRule(
         name=body.name,
         whitelist=body.whitelist,
-        single_limit_wei=int(body.single_limit_eth * 10**18),
-        daily_limit_wei=int(body.daily_limit_eth * 10**18),
+        single_limit_wei=eth_to_wei(body.single_limit_eth),
+        daily_limit_wei=eth_to_wei(body.daily_limit_eth),
         cron=body.cron,
     )
     try:
@@ -343,8 +354,13 @@ async def execute(body: ExecuteIn) -> dict:
     report = result.to_report()
     # 风控拒绝也写入执行记录，便于审计
     if not result.ok and "风控拦截" in result.error:
+        from decimal import Decimal, InvalidOperation
+        try:
+            amount_wei = int(Decimal(str(body.amount_eth)) * Decimal(10) ** 18)
+        except (InvalidOperation, ValueError, TypeError):
+            amount_wei = 0
         policy().record(body.rule_id, body.to_address,
-                        int(body.amount_eth * 10**18), "rejected", error=result.error)
+                        amount_wei, "rejected", error=result.error)
     return report
 
 

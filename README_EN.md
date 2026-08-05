@@ -149,7 +149,8 @@ python examples/full_demo.py           # 3 real capabilities chained (recommende
 python examples/subscription_demo.py   # subscription scheduler: run once + show next trigger
 python examples/subscription_demo.py --wait  # also wait for the scheduled trigger
 python examples/transfer_demo.py       # transfer only
-python examples/workflow_demo.py       # workflow create -> execute -> poll
+python examples/workflow_demo.py       # workflow create -> execute -> poll (reuses same-name workflows)
+python examples/x402_dryrun.py         # x402 pay-per-use offline checklist (--real to settle)
 ```
 
 ### Web Dashboard
@@ -170,6 +171,8 @@ uvicorn web.app:app --host 127.0.0.1 --port 8000
 > - **Rules must have limits**: creating a rule requires at least one of a non-empty allowlist, a per-tx limit, or a daily limit; totally-unrestricted rules (`0 = unlimited`) are rejected with 422.
 > - **`chain_id` allowlist**: execution only allows chains in `PAYKEEPER_ALLOWED_CHAIN_IDS` (default Sepolia 11155111 / Base Sepolia 84532); mainnet requests are rejected.
 > - **Custom provider needs allowlist**: `/api/provider` custom `base_url` must match `OPENAI_COMPATIBLE_BASE_URL_ALLOWLIST`, otherwise the LLM key could be exfiltrated to an attacker server.
+> - **Treat the `kh_` API key as highly sensitive**: a past audit noted the key once appeared in a conversation log (AUDIT S-01) — **rotate it now at app.keeperhub.com** and rotate regularly (e.g. monthly). Keep the key in `.env` only; never commit it, never save it through the frontend.
+> - **Mainnet + Gas Sponsorship**: the default allowlist contains testnets only to prevent accidental mainnet spending. To produce the "mainnet + sponsored gas" evidence chain: append the mainnet chain id to `PAYKEEPER_ALLOWED_CHAIN_IDS` in `.env` (Ethereum=1 / Base=8453), fund the KeeperHub managed wallet with a little ETH/USDC, then run any transfer normally — KeeperHub applies Gas Sponsorship on mainnet and the audit trail records `sponsored:true`.
 
 | Tab | What it does |
 |-----|--------------|
@@ -197,6 +200,10 @@ All **8** real on-chain transactions below are directly verifiable on Sepolia Et
 | 7 | `execute_transfer` (subscription scheduler) | [`0x424af7…ca65`](https://sepolia.etherscan.io/tx/0x424af7e9bba7f1b32aa6395d70839c114184a755bf6593fde746672fa803ca65) | — | `iri3e6q76u1dhfqcdyfjm` |
 | 8 | `execute_transfer` (Dashboard manual) | [`0x65203c…b7`](https://sepolia.etherscan.io/tx/0x65203cb5a6b650865afe672cd109d2724b5982a63eea1f2a417fcc6ecac236b7) | — | — |
 
+> **About the `sponsored` column**: it reflects the `sponsored: true` field **returned by KeeperHub at execution time** (recorded 2026-08-03; see local `examples/output/transactions_log.md`), not an inference by this repo. Official docs scope Gas Sponsorship to mainnet Ethereum; on testnets, sponsorship status is whatever the execution response reports. `—` means the field was absent in that response.
+>
+> **Transaction-count basis**: the 8 transactions above are all the on-chain transactions verifiable from this repo (7 from docs + 1 from the Dashboard execution log). A few earlier-session transactions exist only in local logs and are intentionally excluded from the verifiable count.
+
 ---
 
 ## Reliability & Security
@@ -217,6 +224,24 @@ request -> [1] simulate=true pre-flight -> [2] idempotent broadcast -> [3] statu
 - **Status polling**: waits for terminal states (`success | completed | failed | reverted`)
 - **Audit trail**: every execution returns full `audit_trail` (simulate / broadcast / confirm nodes)
 - **x402 facilitator allowlist**: HTTPS-only + suffix allowlist (default `keeperhub.com` only — anti-phishing)
+
+### x402 / MPP pay-per-use (code ready — live-settlement checklist)
+
+`agent/x402_client.py` ships a complete x402 client (EIP-3009 `TransferWithAuthorization` signing + challenge parsing + asset/amount/facilitator triple allowlist). Before submission, run one **real settlement** and paste the tx hash into the transaction table:
+
+```bash
+# 1) Offline checklist first — no private key needed
+python examples/x402_dryrun.py
+
+# 2) Prepare the real environment (.env)
+X402_PRIVATE_KEY=<EOA private key>          # fund a little USDC on Base Sepolia
+X402_FACILITATOR_URL=https://app.keeperhub.com/settlement   # verify against docs.keeperhub.com
+
+# 3) Real settlement (a few cents)
+python examples/x402_dryrun.py --real
+```
+
+> Field contracts follow [docs.keeperhub.com/ai-tools/agentic-wallet](https://docs.keeperhub.com) as the source of truth; if the 402 body differs on first run, calibrate against `extract_challenge`'s tolerant structure. After a successful settlement, append the tx hash to the table above with type `x402`.
 
 ### True-timer subscriptions
 
@@ -244,6 +269,15 @@ Validation chain (any failure = reject, never goes on-chain)
 - **Accounting**: successful executions count toward the daily cumulative limit automatically
 - **Integration**: `execute_transfer(policy_engine=..., policy_rule_id=...)` validates before execution and books after success; the audit trail includes a `policy` node
 - **Test coverage**: 8/8 unit tests + 5/5 integration tests
+
+### Run the tests (offline, no KeeperHub key needed)
+
+```bash
+pip install pytest
+python -m pytest tests/ -q   # 46 tests pass (policy / amount parsing / cron / subscription idempotency / x402 / Agent wrapper)
+```
+
+All tests run offline: the policy engine uses an in-memory SQLite, and the Agent wrapper uses a fake tool to prove the underlying tool is **never invoked** when risk control rejects a call.
 
 ### Security audit
 

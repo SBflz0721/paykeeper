@@ -12,9 +12,10 @@
 | 类别 | 结果 |
 |------|------|
 | 真实交易验证 | 通过：8 笔仓库内可验证 Sepolia 交易（全部附 Etherscan 链接，见 README）；开发期另有执行记录仅存本地日志 |
-| 敏感信息泄露 | 注意：1 项（`kh_` Key 暴露于对话；已确保不进 git），**建议轮换** |
-| 已修复 bug/漏洞 | **20 项**（B-01~B-07、F-04、S-03~S-14：含安全加固，见第 7、8 节） |
-| 待跟进事项 | 3 项（中/低/信息） |
+| 敏感信息泄露 | 注意：1 项（`kh_` Key 暴露于对话；已确保不进 git），**建议立即轮换**（README 已加信任模型说明） |
+| 已修复 bug/漏洞 | **26 项**（B-01~B-07、F-01/F-04、S-03~S-14、R-02/R-03/R-05~R-08，见第 7、8、9 节） |
+| 测试入库 | **46 用例**（`tests/`，`pytest tests/ -q` 全通过，离线可复现） |
+| 待跟进事项 | 4 项（需外部条件：x402 真实结算、主网 + 赞助 gas 交易、`kh_` Key 轮换；R-10 为评审误判） |
 
 ---
 
@@ -215,3 +216,42 @@
 
 - **[S-14] README 交易数不可验证（已修复）**：README 声称 18 笔但仓库内只有 7 笔有 Etherscan 链接，评审要求每条都能甩出链接。
   修复：核验仓库 + `policy.db` 执行记录，共有 **8 笔可验证交易**（7 笔来自文档 + 第 8 笔 `0x65203cb5…` 来自 Dashboard 真实执行记录），README 已全部改为「8 笔，每笔附链接」，并注明其余仅存于本地日志、不列入不可核验的计数。
+
+---
+
+## 9. 第五轮审计（2026-08-05，外部黑客松评估报告应对）
+
+外部评审（《PayKeeper 黑客松评估报告》）通读全部核心源码 + 逐笔核验链上交易后提出 10 项问题，逐项处置如下：
+
+### 高（评审能力面缺失）
+
+- **[R-01] x402 无真实结算交易（部分修复，剩余需实跑）**：`x402_client.py` 完整但从未在真实 facilitator 上跑通。
+  修复：新增 `examples/x402_dryrun.py`（离线检查清单：challenge 解析 / 资产白名单 / 金额上限 / facilitator 白名单 / EIP-3009 签名，全链路可验）+ README 实跑指引（Base Sepolia 充少量 USDC → `--real` 结算 → 哈希入表）。真实结算需环境变量 `X402_PRIVATE_KEY`，属用户操作项。
+
+### 中（严谨性 / 可复现性）
+
+- **[R-02] README 与文档自相矛盾：Sepolia 交易标注 Gas Sponsorship（已修复）**：README 交易表 #3/#4/#6 标 `sponsored`，而 `ONBOARDING_TEARDOWN.md` 称"仅主网"。
+  修复：核实 `examples/output/transactions_log.md` 原始记录——`sponsored: true` 是 **2026-08-03 执行时 KeeperHub 返回的真实字段**（非推断）。README 加注释注明字段来源与口径（官方文档面向主网，测试网以执行时返回为准）；`ONBOARDING_TEARDOWN.md` 卡点 3 同步加实测注记，消除矛盾。
+
+- **[R-03] 测试代码未入库（已修复）**：AUDIT_REPORT 声称 8/8 单测、5/5 集成、cron 9/9、幂等 mock、facilitator 5/5，但仓库 `tests/` 为空。
+  修复：新增 `tests/` 共 **46 用例全部入库并通过**（`python -m pytest tests/ -q`）——policy 10、payments 5、subscription 14（含 cron 9 + 幂等/fail-closed）、x402 9、Agent 包装器 8。全部离线运行（`:memory:` SQLite + fake tool），评审无需 kh key 即可复现。README 加 pytest 说明。
+
+- **[R-04] 主网交易缺失（行动指引）**：8 笔全在 Sepolia，官方 Gas Sponsorship 是主网专属卖点。
+  处置：默认链白名单仅含测试网是**有意的安全设计**（防误触主网）。README 安全说明新增"主网 + 赞助 gas 证据链"操作指引（追加 chain id → 充值 → 正常执行）。实跑属用户操作项。
+
+### 低 / 安全提醒 / 信息
+
+- **[R-05] 风控记账不覆盖合约调用（已修复）**：`execute_contract_call` 无金额可记账 → 每日限额可被绕过。
+  修复：包装器金额来源扩展为 `amount` / `amount_hint` / `value`；合约调用不传金额被 fail-closed 拦截（提示显式传 `amount_hint`），所有资金工具成功执行统一记账，不存在绕过路径。
+- **[R-06] Web 层 float→wei（已修复）**：`create_rule`/`execute` 的 `float * 10**18` 改为 Decimal 转换（与 policy 内部一致），非法金额 422。
+- **[R-07] CORS 全开放（已修复）**：`allow_origins` 从 `*` 收紧为 `http://localhost:8000` / `http://127.0.0.1:8000`（Dashboard 本机使用，同源请求不受影响）。
+- **[R-08] 工作流重复堆积（已修复，对应 F-01）**：`workflow_demo.py` 每次运行创建新 workflow。修复：固定 name 查重复用 + `WORKFLOW_CLEANUP=1` 清理同名工作流。
+- **[R-09] `kh_` Key 曾在对话中暴露（行动项）**：AUDIT S-01 已标注。README 安全说明新增信任模型："Key 视为高敏资产，禁止提交/前端保存，建议立即在 app.keeperhub.com 轮换并定期轮换"。
+- **[R-10] git log 仅 1 条提交（误判，无需处理）**：本仓库完整历史 14 条渐进提交（评审侧 shallow clone 所致）。
+
+### 测试统计（入库后）
+
+```
+$ python -m pytest tests/ -q
+46 passed in ~10s        # policy 10 / payments 5 / subscription 14 / x402 9 / agent wrapper 8
+```
