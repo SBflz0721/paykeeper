@@ -1,7 +1,5 @@
 # PayKeeper · 项目愿景（Project Vision）
 
-![PayKeeper Vision Banner](assets/paykeeper_480.png)
-
 > **一句话**：用一句自然语言，让 AI Agent 经 KeeperHub 在链上自动完成付款、订阅与按次付费——每一步都可审计。
 
 ---
