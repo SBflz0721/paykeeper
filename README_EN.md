@@ -1,5 +1,9 @@
 # PayKeeper
 
+<p align="center">
+  <img src="assets/paykeeper_480.png" alt="PayKeeper — Intelligent. Secure. On-Chain." width="480">
+</p>
+
 > One sentence of natural language is all it takes for an AI Agent to pay, subscribe, and pay-per-use on-chain via KeeperHub — every step auditable.
 
 [![GitHub repo size](https://img.shields.io/github/repo-size/SBflz0721/paykeeper)](https://github.com/SBflz0721/paykeeper)
