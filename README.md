@@ -196,10 +196,14 @@ uvicorn web.app:app --host 127.0.0.1 --port 8000
 | 6 | `execute_transfer` | [`0x610036…c121`](https://sepolia.etherscan.io/tx/0x6100369c0f9eadd208bc281ea64ef2b9e69489531a29ecfdaf17b239a7bbc121) | sponsored | — |
 | 7 | `execute_transfer`（订阅调度器） | [`0x424af7…ca65`](https://sepolia.etherscan.io/tx/0x424af7e9bba7f1b32aa6395d70839c114184a755bf6593fde746672fa803ca65) | — | `iri3e6q76u1dhfqcdyfjm` |
 | 8 | `execute_transfer`（Dashboard 手动执行） | [`0x65203c…b7`](https://sepolia.etherscan.io/tx/0x65203cb5a6b650865afe672cd109d2724b5982a63eea1f2a417fcc6ecac236b7) | — | — |
+| 9 | `execute_transfer`（风控路径实测，2026-08-05） | [`0xbf5711…1abc`](https://sepolia.etherscan.io/tx/0xbf57113c92ad9ac2747b1dcb5c290b115a9cb6f8112f020a602b57f7e1ee1abc) | — | `yo87vwhomq4cjuo0awhui` |
+| 10 | `workflow`（订阅付款，2026-08-05） | [`0x683cae…ca35`](https://sepolia.etherscan.io/tx/0x683cae44fd2506aa8f562ba72a816aaffe528c74b18936bc61729ab9d4e8ca35) | sponsored | `s13ot4cxg7bkimayynwc7` |
 
-> **关于 `sponsored` 列**：标注的是**执行时 KeeperHub 返回的 `sponsored: true` 字段**（2026-08-03 记录，见本地 `examples/output/transactions_log.md`），非本仓库推断。官方文档称 Gas Sponsorship 面向主网 Ethereum，测试网是否实际赞助以执行时返回为准；`—` 表示该笔返回中未出现该字段。
+> **关于 `sponsored` 列**：标注的是**执行时 KeeperHub 返回的 `sponsored: true` 字段**（#3/#4 记录于 2026-08-03，第 10 笔 2026-08-05 实跑返回同字段，见本地 `examples/output/transactions_log.md`），非本仓库推断。官方文档称 Gas Sponsorship 面向主网 Ethereum，测试网是否实际赞助以执行时返回为准；`—` 表示该笔返回中未出现该字段。
 >
-> **交易数口径**：以上 8 笔为本仓库可核验的全部链上交易（7 笔文档记录 + 1 笔 Dashboard 执行记录），另有更早期会话中的数笔仅存于本地日志、未计入可核验清单。
+> **交易数口径**：以上 10 笔为本仓库可核验的全部链上交易（8 笔历史记录 + 2026-08-05 新增 2 笔），另有更早期会话中的数笔仅存于本地日志、未计入可核验清单。
+>
+> **主网 / Base Sepolia 实测（2026-08-05）**：已尝试向主网（chain_id=1）与 Base Sepolia（84532）执行小额转账，KeeperHub 返回 `Insufficient ETH/BASE balance. Have: 0.0`——托管钱包仅 Sepolia 有资金，主网与 Base 需先充值（见下文「主网与 Gas Sponsorship」指引）。x402 实跑同理需配置 `X402_PRIVATE_KEY` + Base USDC 资金。
 
 ---
 

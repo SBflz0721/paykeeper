@@ -199,10 +199,14 @@ All **8** real on-chain transactions below are directly verifiable on Sepolia Et
 | 6 | `execute_transfer` | [`0x610036…c121`](https://sepolia.etherscan.io/tx/0x6100369c0f9eadd208bc281ea64ef2b9e69489531a29ecfdaf17b239a7bbc121) | sponsored | — |
 | 7 | `execute_transfer` (subscription scheduler) | [`0x424af7…ca65`](https://sepolia.etherscan.io/tx/0x424af7e9bba7f1b32aa6395d70839c114184a755bf6593fde746672fa803ca65) | — | `iri3e6q76u1dhfqcdyfjm` |
 | 8 | `execute_transfer` (Dashboard manual) | [`0x65203c…b7`](https://sepolia.etherscan.io/tx/0x65203cb5a6b650865afe672cd109d2724b5982a63eea1f2a417fcc6ecac236b7) | — | — |
+| 9 | `execute_transfer` (risk-policy path, 2026-08-05) | [`0xbf5711…1abc`](https://sepolia.etherscan.io/tx/0xbf57113c92ad9ac2747b1dcb5c290b115a9cb6f8112f020a602b57f7e1ee1abc) | — | `yo87vwhomq4cjuo0awhui` |
+| 10 | `workflow` (subscription payment, 2026-08-05) | [`0x683cae…ca35`](https://sepolia.etherscan.io/tx/0x683cae44fd2506aa8f562ba72a816aaffe528c74b18936bc61729ab9d4e8ca35) | sponsored | `s13ot4cxg7bkimayynwc7` |
 
-> **About the `sponsored` column**: it reflects the `sponsored: true` field **returned by KeeperHub at execution time** (recorded 2026-08-03; see local `examples/output/transactions_log.md`), not an inference by this repo. Official docs scope Gas Sponsorship to mainnet Ethereum; on testnets, sponsorship status is whatever the execution response reports. `—` means the field was absent in that response.
+> **About the `sponsored` column**: it reflects the `sponsored: true` field **returned by KeeperHub at execution time** (#3/#4 recorded 2026-08-03; tx #10 returned the same field when executed live on 2026-08-05; see local `examples/output/transactions_log.md`), not an inference by this repo. Official docs scope Gas Sponsorship to mainnet Ethereum; on testnets, sponsorship status is whatever the execution response reports. `—` means the field was absent in that response.
 >
-> **Transaction-count basis**: the 8 transactions above are all the on-chain transactions verifiable from this repo (7 from docs + 1 from the Dashboard execution log). A few earlier-session transactions exist only in local logs and are intentionally excluded from the verifiable count.
+> **Transaction-count basis**: the 10 transactions above are all the on-chain transactions verifiable from this repo (8 historical + 2 executed 2026-08-05). A few earlier-session transactions exist only in local logs and are intentionally excluded from the verifiable count.
+>
+> **Mainnet / Base Sepolia probe (2026-08-05)**: small transfers to mainnet (chain_id=1) and Base Sepolia (84532) were attempted; KeeperHub returned `Insufficient ETH/BASE balance. Have: 0.0` — the managed wallet only has Sepolia funds. Mainnet & Base need funding first (see the "Mainnet + Gas Sponsorship" note below). The x402 live settlement likewise needs `X402_PRIVATE_KEY` + Base USDC.
 
 ---
 

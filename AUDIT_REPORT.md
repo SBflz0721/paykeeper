@@ -11,7 +11,8 @@
 
 | 类别 | 结果 |
 |------|------|
-| 真实交易验证 | 通过：8 笔仓库内可验证 Sepolia 交易（全部附 Etherscan 链接，见 README）；开发期另有执行记录仅存本地日志 |
+| 真实交易验证 | 通过：**10 笔**仓库内可验证 Sepolia 交易（全部附 Etherscan 链接，见 README；2026-08-05 新增 2 笔含风控路径转账与 workflow）；开发期另有执行记录仅存本地日志 |
+| 主网 / Base 探测 | 已实测（2026-08-05）：托管钱包主网与 Base Sepolia 余额为 0（`Insufficient ETH/BASE balance`），需充值后执行；Sepolia 正常 |
 | 敏感信息泄露 | 注意：1 项（`kh_` Key 暴露于对话；已确保不进 git），**建议立即轮换**（README 已加信任模型说明） |
 | 已修复 bug/漏洞 | **26 项**（B-01~B-07、F-01/F-04、S-03~S-14、R-02/R-03/R-05~R-08，见第 7、8、9 节） |
 | 测试入库 | **46 用例**（`tests/`，`pytest tests/ -q` 全通过，离线可复现） |
@@ -255,3 +256,24 @@
 $ python -m pytest tests/ -q
 46 passed in ~10s        # policy 10 / payments 5 / subscription 14 / x402 9 / agent wrapper 8
 ```
+
+---
+
+## 10. 实跑补证（2026-08-05，接管执行链上操作）
+
+外部评估后按 README 指引直接执行链上操作，新增 2 笔真实交易 + 2 项实测结论：
+
+### 新增交易（Sepolia，均可 Etherscan 核验）
+
+| # | 类型 | 交易哈希 | 说明 |
+|---|------|---------|------|
+| 9 | `execute_transfer`（风控路径） | [`0xbf57113c…1abc`](https://sepolia.etherscan.io/tx/0xbf57113c92ad9ac2747b1dcb5c290b115a9cb6f8112f020a602b57f7e1ee1abc) | 0.001 ETH，完整链路 policy → simulate → broadcast，`executionId=yo87vwhomq4cjuo0awhui` |
+| 10 | `workflow`（订阅付款） | [`0x683cae44…ca35`](https://sepolia.etherscan.io/tx/0x683cae44fd2506aa8f562ba72a816aaffe528c74b18936bc61729ab9d4e8ca35) | workflow 执行，**KeeperHub 返回 `sponsored: true`**（实时坐实 README sponsored 标注），gas=47693，`executionId=s13ot4cxg7bkimayynwc7` |
+
+README 交易表 8 → 10 笔，中英同步。
+
+### 实测结论（限制项，需外部条件）
+
+- **主网（chain_id=1）**：托管钱包余额 0 → KeeperHub 返回 `Insufficient ETH balance. Have: 0.0, Need: 0.0001`。需向托管钱包充主网 ETH/USDC 后执行（README 有指引）。顺带验证了幂等重试：3 次广播同一 `executionId` + `idempotentReplay` 字段，未重复扣款。
+- **Base Sepolia（84532）**：同样 `Insufficient BASE balance. Have: 0.0`，需充值。
+- **x402 真实结算**：官方 MCP 35 工具中无 x402 结算工具（自研 `x402_client.py` 是唯一路径），且沙箱无 `X402_PRIVATE_KEY`（无法伪造私钥），故真实结算仍需配置 `X402_PRIVATE_KEY` + Base USDC 后运行 `python examples/x402_dryrun.py --real`。代码与检查清单已就绪。
